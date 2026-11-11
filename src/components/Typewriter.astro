@@ -1,0 +1,138 @@
+---
+/**
+ * Rotating tagline with a typewriter effect: types a phrase, holds it, deletes
+ * it and types the next one, looping forever. The caret blinks while idle and
+ * stays solid while typing.
+ *
+ * - Screen readers get every phrase once (visually hidden) instead of
+ *   character-by-character noise; the animated text is aria-hidden.
+ * - The line never wraps and its font size shrinks to fit the longest phrase,
+ *   so changing phrases never shifts the layout below it.
+ * - With reduced motion, phrases swap instantly instead of being typed.
+ * - Without JS, the first phrase is shown statically.
+ */
+interface Props {
+  phrases: string[];
+  /** Approximate width of the longest phrase, in `em`, used to fit small screens. */
+  fitEm?: number;
+  class?: string;
+}
+
+const { phrases, fitEm = 11.2, class: className } = Astro.props;
+const [first = ''] = phrases;
+---
+
+<p
+  class:list={['typewriter', className]}
+  style={`--fit:${fitEm}`}
+  data-typewriter
+  data-phrases={JSON.stringify(phrases)}
+>
+  <span class="visually-hidden">{phrases.join(', ')}</span>
+  <span class="typewriter__visual" aria-hidden="true">
+    <span class="typewriter__text" data-typewriter-text>{first}</span><span
+      class="typewriter__caret"
+      data-typewriter-caret>|</span
+    >
+  </span>
+</p>
+
+<script>
+  const TYPE_MS = 75;
+  const DELETE_MS = 40;
+  const HOLD_MS = 1800;
+  const GAP_MS = 350;
+  const REDUCED_HOLD_MS = 3000;
+
+  const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+  // Resolves immediately while the tab is visible; otherwise waits until it is,
+  // so the loop doesn't burn timers in background tabs.
+  const whenVisible = () =>
+    document.hidden
+      ? new Promise<void>((resolve) =>
+          document.addEventListener('visibilitychange', () => resolve(), { once: true }),
+        )
+      : Promise.resolve();
+
+  async function run(root: HTMLElement) {
+    const textEl = root.querySelector<HTMLElement>('[data-typewriter-text]');
+    if (!textEl) return;
+
+    const phrases: string[] = JSON.parse(root.dataset.phrases ?? '[]');
+    if (phrases.length < 2) return;
+
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const setTyping = (typing: boolean) => root.classList.toggle('is-typing', typing);
+
+    let index = 0;
+
+    while (true) {
+      await whenVisible();
+
+      if (reducedMotion.matches) {
+        await wait(REDUCED_HOLD_MS);
+        index = (index + 1) % phrases.length;
+        textEl.textContent = phrases[index];
+        continue;
+      }
+
+      await wait(HOLD_MS);
+      setTyping(true);
+
+      // Delete the current phrase.
+      const current = phrases[index];
+      for (let length = current.length - 1; length >= 0; length--) {
+        textEl.textContent = current.slice(0, length);
+        await wait(DELETE_MS);
+      }
+
+      setTyping(false);
+      await wait(GAP_MS);
+      setTyping(true);
+
+      // Type the next one, with slight jitter so it feels hand-typed.
+      index = (index + 1) % phrases.length;
+      const next = phrases[index];
+      for (let length = 1; length <= next.length; length++) {
+        textEl.textContent = next.slice(0, length);
+        await wait(TYPE_MS + Math.random() * 50);
+      }
+
+      setTyping(false);
+    }
+  }
+
+  document.querySelectorAll<HTMLElement>('[data-typewriter]').forEach((root) => void run(root));
+</script>
+
+<style>
+  .typewriter {
+    /* Shrink below the inherited size only when the longest phrase wouldn't fit. */
+    font-size: min(1em, (100vw - 2 * var(--page-gutter) - 8px) / var(--fit));
+    white-space: nowrap;
+  }
+
+  .typewriter__caret {
+    display: inline-block;
+    margin-left: 0.04em;
+    font-style: normal;
+    animation: caret-blink 1s steps(1) infinite;
+  }
+
+  .typewriter.is-typing .typewriter__caret {
+    animation: none;
+  }
+
+  @keyframes caret-blink {
+    50% {
+      opacity: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .typewriter__caret {
+      animation: none;
+    }
+  }
+</style>
