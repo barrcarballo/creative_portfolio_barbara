@@ -1,0 +1,511 @@
+---
+/**
+ * Full-screen section viewer. Opening a section flies the matching hanging
+ * star to the centre of the screen with a spin (FLIP animation), where it
+ * becomes a large star whose cream centre opens to reveal the content.
+ *
+ * - Routing: every `#<section-id>` link on the page opens its section and the
+ *   hash is kept in the URL, so browser Back closes it and deep links work.
+ * - "Siguiente" spins the star one point (72°) while swapping content;
+ *   "Volver" / Escape fly it back to its rope.
+ * - Built on <dialog>: focus is trapped, the page behind is inert and focus
+ *   returns to the opener on close.
+ */
+import type { Section } from '../data/sections';
+import ProjectTabs from './ProjectTabs.astro';
+
+interface Props {
+  sections: Section[];
+}
+
+const { sections } = Astro.props;
+const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
+---
+
+<dialog class="section-dialog" aria-labelledby={`section-title-${sections[0]?.id}`} data-section-dialog>
+  <div class="section-dialog__backdrop" data-section-backdrop></div>
+
+  <button class="section-dialog__btn section-dialog__btn--back" type="button" data-section-close>
+    <img src="/images/arrow-left.svg" width="21" height="21" alt="" />
+    <span><span class="script-initial">V</span>olver</span>
+  </button>
+
+  <button class="section-dialog__btn section-dialog__btn--next" type="button" data-section-next>
+    <span><span class="script-initial">S</span>iguiente</span>
+    <img src="/images/arrow-right.svg" width="21" height="21" alt="" />
+  </button>
+
+  <div class="section-star" data-section-star>
+    <!-- Rotating layer: everything shaped like the star spins together. -->
+    <div class="section-star__body" data-section-star-body>
+      <img class="section-star__frame" src="/images/section-star-frame.png" alt="" loading="lazy" />
+      <img
+        class="section-star__leopard"
+        src="/images/star-leopard.png"
+        alt=""
+        data-section-star-leopard
+      />
+      <img
+        class="section-star__fill"
+        src="/images/section-star-fill.svg"
+        width="1056"
+        height="965"
+        alt=""
+        loading="lazy"
+        data-section-star-fill
+      />
+    </div>
+
+    <!-- Content stays upright: it is not part of the rotating layer. -->
+    <div class="section-star__content" data-section-content-wrap>
+      {
+        sections.map((section) => {
+          const [initial, rest] = splitInitial(section.title);
+          return (
+            <article class="section-star__article" data-section-content={section.id} hidden>
+              <h2 class="section-star__title" id={`section-title-${section.id}`}>
+                <span class="script-initial">{initial}</span>
+                {rest}
+                {section.accent && <span class="section-star__accent">{section.accent}</span>}
+              </h2>
+              {section.projects ? (
+                <ProjectTabs projects={section.projects} />
+              ) : (
+                <p class="section-star__text" set:html={section.body} />
+              )}
+            </article>
+          );
+        })
+      }
+    </div>
+  </div>
+</dialog>
+
+<script>
+  const FLIGHT_MS = 950;
+  const OPEN_FILL_MS = 420;
+  const NEXT_MS = 850;
+  const FLIGHT_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
+
+  const dialog = document.querySelector<HTMLDialogElement>('[data-section-dialog]');
+
+  if (dialog) initSectionDialog(dialog);
+
+  function initSectionDialog(dialog: HTMLDialogElement) {
+    const star = dialog.querySelector<HTMLElement>('[data-section-star]')!;
+    const body = dialog.querySelector<HTMLElement>('[data-section-star-body]')!;
+    const leopard = dialog.querySelector<HTMLElement>('[data-section-star-leopard]')!;
+    const fill = dialog.querySelector<HTMLElement>('[data-section-star-fill]')!;
+    const contentWrap = dialog.querySelector<HTMLElement>('[data-section-content-wrap]')!;
+    const backdrop = dialog.querySelector<HTMLElement>('[data-section-backdrop]')!;
+    const buttons = [...dialog.querySelectorAll<HTMLElement>('.section-dialog__btn')];
+    const articles = new Map(
+      [...dialog.querySelectorAll<HTMLElement>('[data-section-content]')].map((el) => [
+        el.dataset.sectionContent!,
+        el,
+      ]),
+    );
+    const ids = [...articles.keys()];
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+    let current: string | null = null;
+    let busy = false;
+
+    const slotFor = (id: string) =>
+      document.querySelector<HTMLElement>(`[data-star-slot][data-section="${id}"]`);
+
+    const sectionFromHash = () => {
+      const id = decodeURIComponent(location.hash.slice(1));
+      return articles.has(id) ? id : null;
+    };
+
+    const showArticle = (id: string) => {
+      articles.forEach((el, key) => (el.hidden = key !== id));
+      dialog.setAttribute('aria-labelledby', `section-title-${id}`);
+    };
+
+    /** Transform that makes the big star sit exactly over the hanging star. */
+    const flipFrom = (slot: HTMLElement | null) => {
+      const target = star.getBoundingClientRect();
+      const source = slot?.querySelector('.stars__star')?.getBoundingClientRect();
+      if (!source || source.width === 0) return 'translate(0, 0) scale(0.25)';
+      const dx = source.left + source.width / 2 - (target.left + target.width / 2);
+      const dy = source.top + source.height / 2 - (target.top + target.height / 2);
+      return `translate(${dx}px, ${dy}px) scale(${source.width / target.width})`;
+    };
+
+    const fade = (el: Element, from: number, to: number, duration: number, delay = 0) =>
+      el.animate({ opacity: [from, to] }, { duration, delay, easing: 'ease', fill: 'both' }).finished;
+
+    const lockScroll = (locked: boolean) => {
+      document.documentElement.style.overflow = locked ? 'hidden' : '';
+    };
+
+    async function open(id: string) {
+      if (busy || current === id) return;
+      if (current) return goTo(id);
+      busy = true;
+      current = id;
+
+      showArticle(id);
+      lockScroll(true);
+      dialog.showModal();
+
+      const slot = slotFor(id);
+      const motion = !reducedMotion.matches;
+      const from = flipFrom(slot);
+      slot?.classList.add('is-away');
+
+      // Reset the layers to their "closed" look before animating in.
+      body.style.transform = '';
+      [fill, contentWrap].forEach((el) => (el.style.opacity = '0'));
+
+      fade(backdrop, 0, 1, motion ? 400 : 200);
+      buttons.forEach((btn) => fade(btn, 0, 1, 300, motion ? FLIGHT_MS * 0.6 : 0));
+
+      if (motion) {
+        // Fly + grow from the hanging star while spinning one full turn.
+        await Promise.all([
+          star.animate({ transform: [from, 'none'] }, { duration: FLIGHT_MS, easing: FLIGHT_EASING })
+            .finished,
+          body.animate({ rotate: ['-360deg', '0deg'] }, { duration: FLIGHT_MS, easing: FLIGHT_EASING })
+            .finished,
+          leopard.animate({ opacity: [1, 1, 0] }, { duration: FLIGHT_MS, fill: 'both' }).finished,
+        ]);
+        // The cream centre "opens" from the middle, then the content appears.
+        fill.style.opacity = '';
+        await fill.animate(
+          { scale: [0.2, 1], opacity: [0, 1] },
+          { duration: OPEN_FILL_MS, easing: 'cubic-bezier(0.34, 1.4, 0.64, 1)' },
+        ).finished;
+      } else {
+        leopard.style.opacity = '0';
+        fill.style.opacity = '';
+      }
+
+      contentWrap.style.opacity = '';
+      await contentWrap.animate(
+        { opacity: [0, 1], translate: motion ? ['0 12px', '0 0'] : ['0 0', '0 0'] },
+        { duration: 300, easing: 'ease-out' },
+      ).finished;
+
+      busy = false;
+    }
+
+    async function goTo(id: string) {
+      if (busy || !current || id === current) return;
+      busy = true;
+      const motion = !reducedMotion.matches;
+
+      slotFor(current)?.classList.remove('is-away');
+      slotFor(id)?.classList.add('is-away');
+
+      await fade(contentWrap, 1, 0, 150);
+      showArticle(id);
+      current = id;
+
+      if (motion) {
+        // A full turn: the star isn't perfectly symmetric, so it has to land
+        // exactly where it started.
+        await body.animate(
+          { rotate: ['0deg', '360deg'], scale: [1, 0.92, 1] },
+          { duration: NEXT_MS, easing: 'cubic-bezier(0.65, 0, 0.35, 1)' },
+        ).finished;
+      }
+
+      await fade(contentWrap, 0, 1, 250);
+      contentWrap.style.opacity = '';
+      busy = false;
+    }
+
+    async function close() {
+      if (busy || !current) return;
+      busy = true;
+      const slot = slotFor(current);
+      const motion = !reducedMotion.matches;
+
+      buttons.forEach((btn) => fade(btn, 1, 0, 150));
+      await fade(contentWrap, 1, 0, 150);
+
+      if (motion) {
+        await fill.animate({ scale: [1, 0.2], opacity: [1, 0] }, { duration: 260, easing: 'ease-in', fill: 'forwards' })
+          .finished;
+        const to = flipFrom(slot);
+        const backdropOut = fade(backdrop, 1, 0, FLIGHT_MS * 0.8, FLIGHT_MS * 0.2);
+        await Promise.all([
+          star.animate({ transform: ['none', to] }, { duration: FLIGHT_MS * 0.85, easing: FLIGHT_EASING, fill: 'forwards' })
+            .finished,
+          body.animate(
+            { rotate: ['0deg', '360deg'] },
+            { duration: FLIGHT_MS * 0.85, easing: FLIGHT_EASING, fill: 'forwards' },
+          ).finished,
+          leopard.animate({ opacity: [0, 1] }, { duration: FLIGHT_MS * 0.4, fill: 'both' }).finished,
+          backdropOut,
+        ]);
+      } else {
+        await fade(backdrop, 1, 0, 200);
+      }
+
+      slot?.classList.remove('is-away');
+      dialog.close();
+      lockScroll(false);
+
+      // Drop every lingering animation so the next open starts clean.
+      [star, body, leopard, fill, contentWrap, backdrop, ...buttons].forEach((el) => {
+        el.getAnimations().forEach((animation) => animation.cancel());
+        el.style.removeProperty('rotate');
+        el.style.removeProperty('opacity');
+      });
+
+      current = null;
+      busy = false;
+    }
+
+    // --- Routing ---------------------------------------------------------
+
+    const setHash = (id: string | null, mode: 'push' | 'replace') => {
+      const url = id ? `#${id}` : location.pathname + location.search;
+      history[mode === 'push' ? 'pushState' : 'replaceState'](null, '', url);
+    };
+
+    // Any in-page link to a section opens it instead of jumping.
+    document.addEventListener('click', (event) => {
+      const link = (event.target as HTMLElement).closest<HTMLAnchorElement>('a[href^="#"]');
+      const id = link?.hash.slice(1);
+      if (!link || !id || !articles.has(id)) return;
+      event.preventDefault();
+      if (busy) return;
+      setHash(id, current ? 'replace' : 'push');
+      void open(id);
+    });
+
+    // Browser Back / Forward.
+    window.addEventListener('popstate', () => {
+      const id = sectionFromHash();
+      if (id) void open(id);
+      else void close();
+    });
+
+    dialog.querySelector('[data-section-close]')!.addEventListener('click', () => {
+      if (busy) return;
+      setHash(null, 'replace');
+      void close();
+    });
+
+    dialog.querySelector('[data-section-next]')!.addEventListener('click', () => {
+      if (busy || !current) return;
+      const next = ids[(ids.indexOf(current) + 1) % ids.length];
+      setHash(next, 'replace');
+      void goTo(next);
+    });
+
+    // Escape: run the animated close instead of the instant native one.
+    dialog.addEventListener('cancel', (event) => {
+      event.preventDefault();
+      if (busy) return;
+      setHash(null, 'replace');
+      void close();
+    });
+
+    // Deep link (e.g. /#about) once the page has loaded.
+    const initial = sectionFromHash();
+    if (initial) void open(initial);
+
+    // Warm the cache for the heavy star artwork without delaying first paint.
+    const preload = () =>
+      ['/images/section-star-fill.svg', '/images/section-star-frame.png'].forEach((src) => {
+        new Image().src = src;
+      });
+    if ('requestIdleCallback' in window) requestIdleCallback(preload, { timeout: 4000 });
+    else setTimeout(preload, 2000);
+  }
+</script>
+
+<style>
+  .section-dialog {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    background: transparent;
+    color: var(--color-brown);
+  }
+
+  /* Own backdrop element so it can be animated together with the star. */
+  .section-dialog::backdrop {
+    background: transparent;
+  }
+
+  .section-dialog__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgb(35 18 1 / 0.9);
+  }
+
+  .section-dialog__btn {
+    position: absolute;
+    top: clamp(16px, 2.9vw, 56px);
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    min-width: 156px;
+    height: 40px;
+    padding: 0 24px;
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: var(--color-cream);
+    color: var(--color-brown);
+    font-family: var(--font-ui);
+    font-size: 18px;
+    cursor: pointer;
+    transition: translate 0.2s ease;
+  }
+
+  .section-dialog__btn img {
+    flex: none;
+    transition: translate 0.2s ease;
+  }
+
+  .section-dialog__btn--back {
+    left: clamp(16px, 4.2vw, 80px);
+  }
+
+  .section-dialog__btn--next {
+    right: clamp(16px, 4.2vw, 80px);
+  }
+
+  .section-dialog__btn--back:hover img {
+    translate: -3px 0;
+  }
+
+  .section-dialog__btn--next:hover img {
+    translate: 3px 0;
+  }
+
+  .section-dialog__btn:focus-visible {
+    outline-color: var(--color-cream);
+  }
+
+  .script-initial {
+    font-family: var(--font-script);
+    font-style: normal;
+  }
+
+  /* --- The big star ------------------------------------------------------ */
+
+  .section-star {
+    /* Design: 1176 × 1074 inside a 1920 × 1080 frame. */
+    --star-w: min(1176px, 94vw, calc(96dvh * 1176 / 1074));
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: var(--star-w);
+    aspect-ratio: 1176 / 1074;
+    translate: -50% -50%;
+    container-type: inline-size;
+    transform-origin: center;
+  }
+
+  .section-star__body {
+    position: absolute;
+    inset: 0;
+  }
+
+  .section-star__frame,
+  .section-star__leopard {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .section-star__leopard {
+    opacity: 0;
+  }
+
+  .section-star__fill {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 89.9%;
+    height: 89.9%;
+    translate: -50% -50%;
+  }
+
+  .section-star__content {
+    position: absolute;
+    top: 33.4%;
+    left: 49%;
+    width: 46%;
+    translate: -50% 0;
+    text-align: center;
+  }
+
+  .section-star__article {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6cqw;
+  }
+
+  /* Sections with a project browser need the vertical space. */
+  .section-star__article:has([data-projects]) {
+    gap: 2.6cqw;
+  }
+
+  /* `display: flex` above would otherwise override the `hidden` attribute. */
+  .section-star__article[hidden] {
+    display: none;
+  }
+
+  .section-star__title {
+    margin: 0;
+    max-width: 33cqw;
+    font-family: var(--font-display);
+    font-size: 4.08cqw;
+    font-style: italic;
+    font-weight: 400;
+    line-height: 1.1;
+  }
+
+  .section-star__accent {
+    display: block;
+    color: #e87e01;
+  }
+
+  .section-star__text {
+    margin: 0;
+    color: #000;
+    font-family: var(--font-body);
+    font-size: max(14px, 2.04cqw);
+    line-height: 1.35;
+  }
+
+  /* On narrow screens the star overflows sideways so its centre stays readable. */
+  @media (max-width: 719px) {
+    .section-star {
+      --star-w: min(150vw, calc(88dvh * 1176 / 1074));
+    }
+
+    .section-star__content {
+      top: 31%;
+      width: 50%;
+    }
+
+    .section-dialog__btn {
+      min-width: 0;
+      height: 36px;
+      padding: 0 16px;
+      font-size: 16px;
+    }
+  }
+</style>
