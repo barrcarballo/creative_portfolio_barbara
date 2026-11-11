@@ -1,0 +1,228 @@
+---
+/**
+ * The fur-textured name. Each letter is an image driven by a small spring
+ * simulation: moving the pointer across the word "brushes" the fur — letters
+ * get pushed away from the cursor, lean in the direction of travel and settle
+ * back with a soft bounce. Sizes are expressed in `em` relative to the
+ * surrounding title, so the word scales with its heading.
+ */
+interface Props {
+  name?: string;
+}
+
+const { name = 'Barbara' } = Astro.props;
+
+// Positions and sizes from the Figma frame, measured at a 96px title size.
+const DESIGN_FONT_SIZE = 96;
+const DESIGN_HEIGHT = 169;
+const DESIGN_WIDTH = 496;
+
+const letters = [
+  { src: '/images/letter-b.png', x: 0, width: 95 },
+  { src: '/images/letter-a-1.png', x: 92, width: 73 },
+  { src: '/images/letter-r-1.png', x: 165, width: 56 },
+  { src: '/images/letter-b-2.png', x: 221, width: 76 },
+  { src: '/images/letter-a-2.png', x: 297, width: 73 },
+  { src: '/images/letter-r-2.png', x: 370, width: 56 },
+  { src: '/images/letter-a-3.png', x: 423, width: 73 },
+];
+
+const toEm = (px: number) => `${px / DESIGN_FONT_SIZE}em`;
+---
+
+<span
+  class="fur-name"
+  style={`--w:${toEm(DESIGN_WIDTH)};--h:${toEm(DESIGN_HEIGHT)}`}
+  data-fur-name
+>
+  <span class="visually-hidden">{name}</span>
+  {
+    letters.map((letter) => (
+      <span
+        class="fur-name__slot"
+        style={`left:${toEm(letter.x)};width:${toEm(letter.width)}`}
+        aria-hidden="true"
+      >
+        <img class="fur-name__letter" src={letter.src} alt="" draggable="false" data-fur-letter />
+      </span>
+    ))
+  }
+</span>
+
+<script>
+  type Spring = { value: number; velocity: number };
+
+  interface Letter {
+    el: HTMLElement;
+    slot: HTMLElement;
+    x: Spring;
+    y: Spring;
+    rotate: Spring;
+    skew: Spring;
+    scale: Spring;
+  }
+
+  const STIFFNESS = 180;
+  const DAMPING = 13;
+  const REST_EPSILON = 0.01;
+
+  const spring = (value = 0): Spring => ({ value, velocity: 0 });
+  const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
+
+  function step(s: Spring, target: number, dt: number) {
+    const accel = STIFFNESS * (target - s.value) - DAMPING * s.velocity;
+    s.velocity += accel * dt;
+    s.value += s.velocity * dt;
+  }
+
+  function initFurName(root: HTMLElement) {
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+    const letters: Letter[] = [...root.querySelectorAll<HTMLElement>('[data-fur-letter]')].map(
+      (el) => ({
+        el,
+        slot: el.parentElement as HTMLElement,
+        x: spring(),
+        y: spring(),
+        rotate: spring(),
+        skew: spring(),
+        scale: spring(1),
+      }),
+    );
+
+    // Pointer state, in viewport coordinates. Velocity decays every frame so
+    // the "brush" effect fades out when the cursor stops.
+    let pointer: { x: number; y: number } | null = null;
+    let pointerVX = 0;
+    let pointerVY = 0;
+    let frame = 0;
+    let lastTime = 0;
+    let lastMoveTime = 0;
+
+    // The interaction zone is wider than the word itself so letters start
+    // reacting just before the cursor touches them.
+    const zone = root.closest<HTMLElement>('[data-fur-zone]') ?? root;
+
+    const render = (time: number) => {
+      const dt = Math.min((time - lastTime) / 1000, 1 / 30);
+      lastTime = time;
+
+      pointerVX *= 0.86;
+      pointerVY *= 0.86;
+
+      let moving = false;
+      const letterHeight = root.getBoundingClientRect().height;
+      const radius = letterHeight * 1.1;
+
+      for (const letter of letters) {
+        let tx = 0;
+        let ty = 0;
+        let tRotate = 0;
+        let tSkew = 0;
+        let tScale = 1;
+
+        if (pointer) {
+          const rect = letter.slot.getBoundingClientRect();
+          const cx = rect.left + rect.width / 2;
+          const cy = rect.top + rect.height * 0.55;
+          const dx = cx - pointer.x;
+          const dy = cy - pointer.y;
+          const distance = Math.hypot(dx, dy) || 1;
+          const influence = Math.max(0, 1 - distance / radius) ** 2;
+
+          if (influence > 0) {
+            const reach = letterHeight * 0.12;
+            tx = (dx / distance) * influence * reach;
+            ty = (dy / distance) * influence * reach * 0.6 - influence * reach * 0.4;
+            tRotate = clamp(pointerVX * 0.012, -14, 14) * influence + (dx / distance) * influence * 5;
+            tSkew = clamp(-pointerVX * 0.015, -16, 16) * influence;
+            tScale = 1 + influence * 0.06 + clamp(Math.abs(pointerVY) * 0.0004, 0, 0.05) * influence;
+          }
+        }
+
+        step(letter.x, tx, dt);
+        step(letter.y, ty, dt);
+        step(letter.rotate, tRotate, dt);
+        step(letter.skew, tSkew, dt);
+        step(letter.scale, tScale, dt);
+
+        letter.el.style.transform =
+          `translate(${letter.x.value.toFixed(2)}px, ${letter.y.value.toFixed(2)}px) ` +
+          `rotate(${letter.rotate.value.toFixed(2)}deg) ` +
+          `skewX(${letter.skew.value.toFixed(2)}deg) ` +
+          `scale(${letter.scale.value.toFixed(3)})`;
+
+        const settled =
+          Math.abs(letter.x.value - tx) < REST_EPSILON &&
+          Math.abs(letter.y.value - ty) < REST_EPSILON &&
+          Math.abs(letter.rotate.value - tRotate) < REST_EPSILON &&
+          Math.abs(letter.skew.value - tSkew) < REST_EPSILON &&
+          Math.abs(letter.x.velocity) + Math.abs(letter.rotate.velocity) < REST_EPSILON;
+
+        if (!settled) moving = true;
+      }
+
+      // Keep animating while something is still moving or the pointer is "brushing".
+      if (moving || Math.abs(pointerVX) > 5 || Math.abs(pointerVY) > 5) {
+        frame = requestAnimationFrame(render);
+      } else {
+        frame = 0;
+      }
+    };
+
+    const wake = () => {
+      if (!frame) {
+        lastTime = performance.now();
+        frame = requestAnimationFrame(render);
+      }
+    };
+
+    zone.addEventListener('pointermove', (event) => {
+      if (reducedMotion.matches) return;
+      if (pointer) {
+        // Convert per-event deltas into px/s so the effect is frame-rate independent.
+        const dt = Math.max(event.timeStamp - lastMoveTime, 8) / 1000;
+        pointerVX = clamp((event.clientX - pointer.x) / dt, -3000, 3000) * 0.3 + pointerVX * 0.7;
+        pointerVY = clamp((event.clientY - pointer.y) / dt, -3000, 3000) * 0.3 + pointerVY * 0.7;
+      }
+      lastMoveTime = event.timeStamp;
+      pointer = { x: event.clientX, y: event.clientY };
+      wake();
+    });
+
+    zone.addEventListener('pointerleave', () => {
+      pointer = null;
+      wake();
+    });
+  }
+
+  document.querySelectorAll<HTMLElement>('[data-fur-name]').forEach(initFurName);
+</script>
+
+<style>
+  .fur-name {
+    position: relative;
+    display: inline-block;
+    flex: none;
+    width: var(--w);
+    height: var(--h);
+    vertical-align: bottom;
+  }
+
+  .fur-name__slot {
+    position: absolute;
+    top: 0;
+    height: 100%;
+  }
+
+  /* The source PNGs are intentionally stretched to each slot, as in the design. */
+  .fur-name__letter {
+    width: 100%;
+    height: 100%;
+    object-fit: fill;
+    transform-origin: 50% 80%;
+    user-select: none;
+    -webkit-user-drag: none;
+    will-change: transform;
+  }
+</style>
