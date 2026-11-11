@@ -1,0 +1,276 @@
+---
+/**
+ * Site-wide navigation. Desktop shows inline links; below 768px the links
+ * collapse into a toggleable panel so the pill stays legible on small screens.
+ */
+interface NavLink {
+  label: string;
+  href: string;
+}
+
+const links: NavLink[] = [
+  { label: 'about', href: '#about' },
+  { label: 'work', href: '#work' },
+  { label: 'services', href: '#services' },
+];
+---
+
+<header class="site-header" data-site-header>
+  <div class="site-header__bar">
+    <a class="site-header__brand" href="#top">
+      <span class="script-initial">B</span>arbara’s Creative portfolio
+    </a>
+
+    <button
+      class="site-header__toggle"
+      type="button"
+      aria-expanded="false"
+      aria-controls="site-nav"
+      data-nav-toggle
+    >
+      <span class="site-header__toggle-label" data-nav-toggle-label>menu</span>
+    </button>
+
+    <nav class="site-header__nav" id="site-nav" aria-label="Main" data-nav>
+      <ul class="site-header__links">
+        {
+          links.map((link) => (
+            <li>
+              <a class="site-header__link" href={link.href}>
+                {link.label}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+      <a class="site-header__cta" href="#contact">
+        <span><span class="script-initial">L</span>et’s Talk</span>
+        <img src="/images/arrow-up-right.svg" width="21" height="21" alt="" />
+      </a>
+    </nav>
+  </div>
+</header>
+
+<script>
+  const header = document.querySelector<HTMLElement>('[data-site-header]');
+  const toggle = header?.querySelector<HTMLButtonElement>('[data-nav-toggle]');
+  const label = header?.querySelector<HTMLElement>('[data-nav-toggle-label]');
+  const nav = header?.querySelector<HTMLElement>('[data-nav]');
+
+  if (header && toggle && label && nav) {
+    const setOpen = (open: boolean) => {
+      toggle.setAttribute('aria-expanded', String(open));
+      header.classList.toggle('is-open', open);
+      label.textContent = open ? 'close' : 'menu';
+    };
+
+    toggle.addEventListener('click', () => {
+      setOpen(toggle.getAttribute('aria-expanded') !== 'true');
+    });
+
+    // Close after choosing a destination or pressing Escape.
+    nav.addEventListener('click', (event) => {
+      if ((event.target as HTMLElement).closest('a')) setOpen(false);
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && header.classList.contains('is-open')) {
+        setOpen(false);
+        toggle.focus();
+      }
+    });
+
+    // Reset when growing past the mobile breakpoint.
+    window.matchMedia('(min-width: 768px)').addEventListener('change', (mq) => {
+      if (mq.matches) setOpen(false);
+    });
+  }
+</script>
+
+<style>
+  .site-header {
+    position: fixed;
+    inset: 19px var(--page-gutter) auto;
+    z-index: 50;
+    font-family: var(--font-ui);
+    font-size: 18px;
+  }
+
+  .site-header__bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 15px 30px;
+    border-radius: var(--radius-pill);
+    background: var(--color-brown-glass);
+    backdrop-filter: blur(6px);
+    transition: border-radius 0.3s ease;
+  }
+
+  .site-header__brand {
+    color: var(--color-cream);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .script-initial {
+    font-family: var(--font-script);
+  }
+
+  .site-header__nav {
+    display: flex;
+    align-items: center;
+    gap: 72px;
+  }
+
+  .site-header__links {
+    display: flex;
+    gap: 72px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .site-header__link {
+    color: var(--color-white);
+    text-decoration: none;
+    background: linear-gradient(currentColor, currentColor) no-repeat 0 100% / 0 1px;
+    transition: background-size 0.25s ease;
+  }
+
+  .site-header__link:hover,
+  .site-header__link:focus-visible {
+    background-size: 100% 1px;
+  }
+
+  .site-header__cta {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    width: 156px;
+    padding: 7px 32px;
+    border-radius: var(--radius-pill);
+    background: var(--color-cream);
+    color: var(--color-brown);
+    text-decoration: none;
+    white-space: nowrap;
+    transition: transform 0.2s ease;
+  }
+
+  .site-header__cta:hover {
+    transform: translateY(-2px);
+  }
+
+  .site-header__cta img {
+    flex: none;
+    transition: transform 0.2s ease;
+  }
+
+  .site-header__cta:hover img {
+    transform: translate(2px, -2px);
+  }
+
+  .site-header__toggle {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    min-width: 76px;
+    height: 36px;
+    padding: 0 18px;
+    border: 1px solid var(--color-cream);
+    border-radius: var(--radius-pill);
+    background: transparent;
+    color: var(--color-cream);
+    font: inherit;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  /* Dunbar Low reserves more space above the glyphs than below. The label is
+     lowercase, so trimming to x-height / baseline centres the visible letters. */
+  .site-header__toggle-label {
+    text-box: trim-both ex alphabetic;
+  }
+
+  .site-header :focus-visible {
+    outline-color: var(--color-cream);
+  }
+
+  @media (max-width: 1100px) {
+    .site-header__nav,
+    .site-header__links {
+      gap: 40px;
+    }
+  }
+
+  @media (max-width: 767px) {
+    .site-header {
+      inset-inline: 12px;
+      top: 12px;
+      font-size: 18px;
+    }
+
+    .site-header__bar {
+      padding: 10px 10px 10px 22px;
+    }
+
+    /* Full pill while closed; softer corners once the panel makes it tall. */
+    .site-header.is-open .site-header__bar {
+      border-radius: 28px;
+    }
+
+    .site-header__toggle {
+      display: inline-flex;
+    }
+
+    /* Hidden panel stays in the DOM so it can animate open. */
+    .site-header__nav {
+      flex-basis: 100%;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 16px;
+      max-height: 0;
+      overflow: hidden;
+      visibility: hidden;
+      transition:
+        max-height 0.35s ease,
+        visibility 0s linear 0.35s;
+    }
+
+    .site-header.is-open .site-header__nav {
+      max-height: 320px;
+      padding-block: 12px 4px;
+      visibility: visible;
+      transition: max-height 0.35s ease;
+    }
+
+    .site-header__links {
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .site-header__link {
+      display: block;
+      padding: 8px 0;
+      font-size: 22px;
+    }
+
+    .site-header__cta {
+      width: 100%;
+      padding-block: 12px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .site-header__nav,
+    .site-header__bar,
+    .site-header__cta,
+    .site-header__cta img {
+      transition: none !important;
+    }
+  }
+</style>
