@@ -7,3 +7,6 @@ dist/
 
 # Local agent tooling
 .atl/
+
+# Heavy original design exports (rasterised copies live in src/assets)
+design-sources/

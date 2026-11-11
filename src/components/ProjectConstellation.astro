@@ -1,0 +1,123 @@
+---
+/**
+ * The "Works" overview: one small star per project, each showing the
+ * project's cover cut out in a star shape. Each star links to
+ * `#work/<project-id>`; SectionDialog turns that into the project view.
+ * Sizes use `cqw` of the surrounding big star.
+ */
+import StarArt from './StarArt.astro';
+import type { Project } from '../data/projects';
+import { getProjectImages } from '../lib/projectImages';
+
+interface Props {
+  sectionId: string;
+  projects: Project[];
+}
+
+const { sectionId, projects } = Astro.props;
+---
+
+<ul class="constellation" aria-label="Proyectos">
+  {
+    projects.map((project, index) => {
+      const [cover] = getProjectImages(project.id);
+      return (
+        <li class="constellation__item" style={`--i:${index}`}>
+          <a
+            class="constellation__link"
+            href={`#${sectionId}/${project.id}`}
+            data-project-mini={project.id}
+          >
+            <StarArt
+              class="constellation__art"
+              images={cover ? [cover] : []}
+              alts={[project.imageAlts?.[0] ?? '']}
+              name={project.name}
+              sizes="160px"
+            />
+            <span class="constellation__name">{project.name}</span>
+          </a>
+        </li>
+      );
+    })
+  }
+</ul>
+
+<style>
+  .constellation {
+    --mini-w: 10.5cqw;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 1.6cqw 3cqw;
+    /* Three per row, so five projects form a 3 + 2 constellation. */
+    max-width: calc(3 * var(--mini-w) + 2 * 3cqw + 1px);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* Second row sits slightly lower, like a loose constellation. */
+  .constellation__item:nth-child(n + 4) {
+    translate: 0 0.6cqw;
+  }
+
+  .constellation__link {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5cqw;
+    width: var(--mini-w);
+    color: var(--color-brown);
+    text-decoration: none;
+  }
+
+  .constellation__link :global(.constellation__art) {
+    width: 100%;
+    transition:
+      scale 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+      rotate 0.3s ease,
+      filter 0.3s ease;
+  }
+
+  .constellation__link:hover :global(.constellation__art),
+  .constellation__link:focus-visible :global(.constellation__art) {
+    scale: 1.1;
+    rotate: -6deg;
+    filter: drop-shadow(0 0 1.2cqw rgb(255 196 92 / 0.9));
+  }
+
+  /* Hidden while it is open in the project view. */
+  .constellation__link.is-away :global(.constellation__art) {
+    visibility: hidden;
+  }
+
+  .constellation__name {
+    font-family: var(--font-ui);
+    font-size: max(12px, 1.4cqw);
+    white-space: nowrap;
+  }
+
+  .constellation__link:focus-visible {
+    outline: none;
+  }
+
+  .constellation__link:focus-visible .constellation__name {
+    text-decoration: underline;
+    text-underline-offset: 0.25em;
+  }
+
+  @media (max-width: 719px) {
+    .constellation {
+      --mini-w: 12.5cqw;
+      gap: 2cqw 2.5cqw;
+      max-width: calc(3 * var(--mini-w) + 2 * 2.5cqw + 1px);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .constellation__link :global(.constellation__art) {
+      transition: none;
+    }
+  }
+</style>

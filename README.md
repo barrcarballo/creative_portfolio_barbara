@@ -25,9 +25,16 @@ src/
 │   ├── FurName.astro        # Nombre con textura animal print que reacciona al cursor
 │   ├── HangingStars.astro   # Navegación por secciones: estrellas colgadas de sogas
 │   ├── Typewriter.astro     # Frase rotativa con efecto máquina de escribir
-│   └── SectionDialog.astro  # Visor de secciones: la estrella vuela girando y se abre
+│   ├── SectionDialog.astro  # Visor de secciones y proyectos (animaciones + rutas por hash)
+│   ├── ProjectConstellation.astro # Works: una estrella por proyecto
+│   ├── ProjectDetail.astro  # Vista de proyecto: galería en forma de estrella + ficha
+│   └── StarArt.astro        # Imagen recortada con la silueta de la estrella
+├── assets/projects/<id>/    # Imágenes de cada proyecto (se detectan solas)
 ├── data/
-│   └── sections.ts          # Contenido de cada sección (id = hash de la URL)
+│   ├── sections.ts          # Contenido de cada sección (id = hash de la URL)
+│   └── projects.ts          # Proyectos de Works
+├── lib/
+│   └── projectImages.ts     # Busca y ordena las imágenes de cada proyecto
 ├── layouts/
 │   └── BaseLayout.astro     # HTML base, fuentes y metadatos
 ├── pages/
@@ -69,6 +76,18 @@ al llegar, su centro color crema se abre y aparece el contenido.
 - El hash de la URL refleja la sección abierta, así que los links directos (`/#about`) funcionan.
 - Usa `<dialog>` nativo: foco atrapado, fondo inerte y el foco vuelve a la estrella al cerrar.
 
+### Works: constelación de proyectos
+
+La sección Works muestra una estrella por proyecto con su portada recortada en forma de estrella.
+Al elegir una, la estrellita gira y crece hasta convertirse en una galería, junto a una ficha
+con el nombre, lo que hice y la descripción. "Siguiente" pasa al próximo proyecto y "Volver"
+regresa a la constelación. Cada proyecto tiene su propia URL (`#work/loopies`).
+
+**Agregar imágenes:** copiá los archivos (`.jpg`, `.png`, `.webp`, `.avif`) en
+`src/assets/projects/<id-del-proyecto>/`. Se ordenan por nombre de archivo
+(por ejemplo `1-portada.jpg`, `2-app.png`); la primera es la portada. Astro las optimiza en el build.
+Las descripciones para lectores de pantalla van en `imageAlts` dentro de `src/data/projects.ts`.
+
 ### `SiteHeader`
 
 Barra de navegación fija. Debajo de 768px los links se agrupan en un panel
@@ -80,7 +99,7 @@ _Pendiente: documentar la API utilizada, qué datos se obtienen y cómo se manej
 
 ## Deploy
 
-_Pendiente: URL pública._
+https://barbaracarballo.vercel.app/
 
 ## Créditos
 

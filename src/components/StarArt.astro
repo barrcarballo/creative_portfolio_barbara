@@ -1,0 +1,118 @@
+---
+/**
+ * A picture cut out in the shape of the leopard star, framed by its fur edge.
+ * Renders a stack of images (only the `active` one is visible) or, when there
+ * are no images yet, a placeholder with the project's initial.
+ * Size it from the outside via `width`; the aspect ratio is fixed.
+ */
+import { Image } from 'astro:assets';
+import type { ProjectImage } from '../lib/projectImages';
+
+interface Props {
+  images: ProjectImage[];
+  name: string;
+  alts?: string[];
+  /** Responsive `sizes` hint for the browser. */
+  sizes: string;
+  /** Load eagerly (default lazy). */
+  eager?: boolean;
+  class?: string;
+}
+
+const { images, name, alts = [], sizes, eager = false, class: className } = Astro.props;
+---
+
+<span class:list={['star-art', className]} data-star-art>
+  <img class="star-art__ring" src="/images/star-leopard.png" alt="" draggable="false" />
+  <span class="star-art__picture">
+    {
+      images.length > 0 ? (
+        images.map((image, index) => (
+          <Image
+            class:list={[
+              'star-art__image',
+              `star-art__image--${image.fit}`,
+              { 'is-active': index === 0 },
+            ]}
+            src={image.src}
+            alt={alts[index] ?? `${name} — imagen ${index + 1}`}
+            widths={[320, 640, 1024]}
+            sizes={sizes}
+            loading={eager && index === 0 ? 'eager' : 'lazy'}
+            data-star-art-image
+          />
+        ))
+      ) : (
+        <span class="star-art__placeholder" aria-hidden="true">
+          {name.charAt(0)}
+        </span>
+      )
+    }
+  </span>
+</span>
+
+<style>
+  .star-art {
+    position: relative;
+    display: block;
+    aspect-ratio: 265 / 242;
+    container-type: inline-size;
+  }
+
+  .star-art__ring {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    user-select: none;
+  }
+
+  /* The picture is masked with the star's own silhouette, slightly smaller,
+     so the fur edge stays visible around it. */
+  .star-art__picture {
+    position: absolute;
+    inset: 9%;
+    overflow: hidden;
+    mask: url('/images/star-leopard.png') center / contain no-repeat;
+    background: var(--color-cream);
+  }
+
+  .star-art__image {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0;
+    transition: opacity 0.35s ease;
+  }
+
+  .star-art__image.is-active {
+    opacity: 1;
+  }
+
+  /* Logos: whole and centred, kept clear of the star's narrow points. */
+  .star-art__image--contain {
+    object-fit: contain;
+    padding: 22% 16% 26%;
+  }
+
+  .star-art__placeholder {
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle at 50% 45%, #fff6ea 0%, #f6d9b4 70%, #e9b97c 100%);
+    color: var(--color-brown);
+    font-family: var(--font-script);
+    font-size: 38cqw;
+    line-height: 1;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .star-art__image {
+      transition: none;
+    }
+  }
+</style>

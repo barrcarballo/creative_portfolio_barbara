@@ -4,21 +4,29 @@
  * star to the centre of the screen with a spin (FLIP animation), where it
  * becomes a large star whose cream centre opens to reveal the content.
  *
- * - Routing: every `#<section-id>` link on the page opens its section and the
- *   hash is kept in the URL, so browser Back closes it and deep links work.
- * - "Siguiente" spins the star one point (72°) while swapping content;
- *   "Volver" / Escape fly it back to its rope.
- * - Built on <dialog>: focus is trapped, the page behind is inert and focus
- *   returns to the opener on close.
+ * Two levels:
+ * - Section (`#about`, `#work`…): the big star. "Siguiente" spins it a full
+ *   turn while swapping content; "Volver" / Escape fly it back to its rope.
+ * - Project (`#work/<project>`): from the Works constellation, the small
+ *   project star spins and grows into a gallery next to a text card.
+ *   "Siguiente" moves to the next project; "Volver" returns to the constellation.
+ *
+ * Routing: the URL hash is the single source of truth. Every in-page link to
+ * a known route updates it and `route()` animates to the new state, so
+ * browser Back/Forward and deep links work.
+ * Built on <dialog>: focus is trapped, the page behind is inert and focus
+ * returns to the opener on close.
  */
 import type { Section } from '../data/sections';
-import ProjectTabs from './ProjectTabs.astro';
+import ProjectConstellation from './ProjectConstellation.astro';
+import ProjectDetail from './ProjectDetail.astro';
 
 interface Props {
   sections: Section[];
 }
 
 const { sections } = Astro.props;
+const projectSection = sections.find((section) => section.projects);
 const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
 ---
 
@@ -69,7 +77,7 @@ const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
                 {section.accent && <span class="section-star__accent">{section.accent}</span>}
               </h2>
               {section.projects ? (
-                <ProjectTabs projects={section.projects} />
+                <ProjectConstellation sectionId={section.id} projects={section.projects} />
               ) : (
                 <p class="section-star__text" set:html={section.body} />
               )}
@@ -79,6 +87,8 @@ const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
       }
     </div>
   </div>
+
+  {projectSection?.projects && <ProjectDetail projects={projectSection.projects} />}
 </dialog>
 
 <script>
@@ -86,6 +96,7 @@ const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
   const OPEN_FILL_MS = 420;
   const NEXT_MS = 850;
   const FLIGHT_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
+  const SWAP_EASING = 'cubic-bezier(0.65, 0, 0.35, 1)';
 
   const dialog = document.querySelector<HTMLDialogElement>('[data-section-dialog]');
 
@@ -108,15 +119,40 @@ const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
     const ids = [...articles.keys()];
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
+    // Project level (Works).
+    const detail = dialog.querySelector<HTMLElement>('[data-project-detail]');
+    const projectPanels = new Map(
+      [...dialog.querySelectorAll<HTMLElement>('[data-project-panel]')].map((el) => [
+        el.dataset.projectPanel!,
+        el,
+      ]),
+    );
+    const projectIds = [...projectPanels.keys()];
+    const projectSectionId =
+      dialog.querySelector('[data-project-mini]')?.closest<HTMLElement>('[data-section-content]')
+        ?.dataset.sectionContent ?? null;
+
     let current: string | null = null;
+    let project: string | null = null;
     let busy = false;
+
+    const motion = () => !reducedMotion.matches;
 
     const slotFor = (id: string) =>
       document.querySelector<HTMLElement>(`[data-star-slot][data-section="${id}"]`);
 
-    const sectionFromHash = () => {
-      const id = decodeURIComponent(location.hash.slice(1));
-      return articles.has(id) ? id : null;
+    const miniFor = (id: string) =>
+      dialog.querySelector<HTMLElement>(`[data-project-mini="${id}"]`);
+
+    const partsOf = (id: string) => {
+      const panel = projectPanels.get(id)!;
+      return {
+        panel,
+        art: panel.querySelector<HTMLElement>('[data-project-art]')!,
+        spin: panel.querySelector<HTMLElement>('[data-project-art-spin]')!,
+        card: panel.querySelector<HTMLElement>('[data-project-card]')!,
+        heading: panel.querySelector<HTMLElement>('h2'),
+      };
     };
 
     const showArticle = (id: string) => {
@@ -124,26 +160,36 @@ const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
       dialog.setAttribute('aria-labelledby', `section-title-${id}`);
     };
 
-    /** Transform that makes the big star sit exactly over the hanging star. */
-    const flipFrom = (slot: HTMLElement | null) => {
-      const target = star.getBoundingClientRect();
-      const source = slot?.querySelector('.stars__star')?.getBoundingClientRect();
-      if (!source || source.width === 0) return 'translate(0, 0) scale(0.25)';
-      const dx = source.left + source.width / 2 - (target.left + target.width / 2);
-      const dy = source.top + source.height / 2 - (target.top + target.height / 2);
-      return `translate(${dx}px, ${dy}px) scale(${source.width / target.width})`;
+    const showProjectPanel = (id: string) => {
+      if (detail) detail.hidden = false;
+      projectPanels.forEach((el, key) => (el.hidden = key !== id));
+      dialog.setAttribute('aria-labelledby', `project-name-${id}`);
+    };
+
+    /** Transform that places `target` exactly over `source` (FLIP "invert" step). */
+    const flipBetween = (source: Element | null | undefined, target: Element) => {
+      const to = target.getBoundingClientRect();
+      const from = source?.getBoundingClientRect();
+      if (!from || from.width === 0) return 'translate(0, 0) scale(0.25)';
+      const dx = from.left + from.width / 2 - (to.left + to.width / 2);
+      const dy = from.top + from.height / 2 - (to.top + to.height / 2);
+      return `translate(${dx}px, ${dy}px) scale(${from.width / to.width})`;
     };
 
     const fade = (el: Element, from: number, to: number, duration: number, delay = 0) =>
       el.animate({ opacity: [from, to] }, { duration, delay, easing: 'ease', fill: 'both' }).finished;
 
+    const cancelAnimations = (...elements: Element[]) =>
+      elements.forEach((el) => el.getAnimations().forEach((animation) => animation.cancel()));
+
     const lockScroll = (locked: boolean) => {
       document.documentElement.style.overflow = locked ? 'hidden' : '';
     };
 
+    // --- Section level ---------------------------------------------------
+
     async function open(id: string) {
-      if (busy || current === id) return;
-      if (current) return goTo(id);
+      if (busy || current) return;
       busy = true;
       current = id;
 
@@ -152,18 +198,16 @@ const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
       dialog.showModal();
 
       const slot = slotFor(id);
-      const motion = !reducedMotion.matches;
-      const from = flipFrom(slot);
+      const from = flipBetween(slot?.querySelector('.stars__star'), star);
       slot?.classList.add('is-away');
 
       // Reset the layers to their "closed" look before animating in.
-      body.style.transform = '';
       [fill, contentWrap].forEach((el) => (el.style.opacity = '0'));
 
-      fade(backdrop, 0, 1, motion ? 400 : 200);
-      buttons.forEach((btn) => fade(btn, 0, 1, 300, motion ? FLIGHT_MS * 0.6 : 0));
+      fade(backdrop, 0, 1, motion() ? 400 : 200);
+      buttons.forEach((btn) => fade(btn, 0, 1, 300, motion() ? FLIGHT_MS * 0.6 : 0));
 
-      if (motion) {
+      if (motion()) {
         // Fly + grow from the hanging star while spinning one full turn.
         await Promise.all([
           star.animate({ transform: [from, 'none'] }, { duration: FLIGHT_MS, easing: FLIGHT_EASING })
@@ -185,7 +229,7 @@ const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
 
       contentWrap.style.opacity = '';
       await contentWrap.animate(
-        { opacity: [0, 1], translate: motion ? ['0 12px', '0 0'] : ['0 0', '0 0'] },
+        { opacity: [0, 1], translate: motion() ? ['0 12px', '0 0'] : ['0 0', '0 0'] },
         { duration: 300, easing: 'ease-out' },
       ).finished;
 
@@ -195,7 +239,6 @@ const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
     async function goTo(id: string) {
       if (busy || !current || id === current) return;
       busy = true;
-      const motion = !reducedMotion.matches;
 
       slotFor(current)?.classList.remove('is-away');
       slotFor(id)?.classList.add('is-away');
@@ -204,12 +247,12 @@ const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
       showArticle(id);
       current = id;
 
-      if (motion) {
+      if (motion()) {
         // A full turn: the star isn't perfectly symmetric, so it has to land
         // exactly where it started.
         await body.animate(
           { rotate: ['0deg', '360deg'], scale: [1, 0.92, 1] },
-          { duration: NEXT_MS, easing: 'cubic-bezier(0.65, 0, 0.35, 1)' },
+          { duration: NEXT_MS, easing: SWAP_EASING },
         ).finished;
       }
 
@@ -221,26 +264,30 @@ const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
     async function close() {
       if (busy || !current) return;
       busy = true;
+      if (project) resetProjectLayer();
+
       const slot = slotFor(current);
-      const motion = !reducedMotion.matches;
 
       buttons.forEach((btn) => fade(btn, 1, 0, 150));
       await fade(contentWrap, 1, 0, 150);
 
-      if (motion) {
-        await fill.animate({ scale: [1, 0.2], opacity: [1, 0] }, { duration: 260, easing: 'ease-in', fill: 'forwards' })
-          .finished;
-        const to = flipFrom(slot);
-        const backdropOut = fade(backdrop, 1, 0, FLIGHT_MS * 0.8, FLIGHT_MS * 0.2);
+      if (motion()) {
+        await fill.animate(
+          { scale: [1, 0.2], opacity: [1, 0] },
+          { duration: 260, easing: 'ease-in', fill: 'forwards' },
+        ).finished;
+        const to = flipBetween(slot?.querySelector('.stars__star'), star);
         await Promise.all([
-          star.animate({ transform: ['none', to] }, { duration: FLIGHT_MS * 0.85, easing: FLIGHT_EASING, fill: 'forwards' })
-            .finished,
+          star.animate(
+            { transform: ['none', to] },
+            { duration: FLIGHT_MS * 0.85, easing: FLIGHT_EASING, fill: 'forwards' },
+          ).finished,
           body.animate(
             { rotate: ['0deg', '360deg'] },
             { duration: FLIGHT_MS * 0.85, easing: FLIGHT_EASING, fill: 'forwards' },
           ).finished,
           leopard.animate({ opacity: [0, 1] }, { duration: FLIGHT_MS * 0.4, fill: 'both' }).finished,
-          backdropOut,
+          fade(backdrop, 1, 0, FLIGHT_MS * 0.8, FLIGHT_MS * 0.2),
         ]);
       } else {
         await fade(backdrop, 1, 0, 200);
@@ -251,65 +298,232 @@ const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
       lockScroll(false);
 
       // Drop every lingering animation so the next open starts clean.
-      [star, body, leopard, fill, contentWrap, backdrop, ...buttons].forEach((el) => {
-        el.getAnimations().forEach((animation) => animation.cancel());
-        el.style.removeProperty('rotate');
-        el.style.removeProperty('opacity');
-      });
+      cancelAnimations(star, body, leopard, fill, contentWrap, backdrop, ...buttons);
+      [star, body, leopard, fill, contentWrap].forEach((el) => el.style.removeProperty('opacity'));
 
       current = null;
       busy = false;
     }
 
+    // --- Project level ---------------------------------------------------
+
+    /** Instantly hide the project view (used when leaving the dialog directly). */
+    function resetProjectLayer() {
+      projectPanels.forEach((_, id) => {
+        const { art, spin, card } = partsOf(id);
+        cancelAnimations(art, spin, card);
+        card.style.removeProperty('opacity');
+        miniFor(id)?.classList.remove('is-away');
+      });
+      cancelAnimations(star);
+      star.inert = false;
+      if (detail) detail.hidden = true;
+      project = null;
+    }
+
+    async function openProject(id: string) {
+      if (busy || !current || current !== projectSectionId || project) return;
+      busy = true;
+      project = id;
+
+      const { art, spin, card, heading } = partsOf(id);
+      const mini = miniFor(id);
+      showProjectPanel(id);
+      const from = flipBetween(mini?.querySelector('[data-star-art]'), art);
+      mini?.classList.add('is-away');
+      star.inert = true;
+      card.style.opacity = '0';
+
+      if (motion()) {
+        // The small star spins and grows into the gallery while the big star recedes.
+        await Promise.all([
+          star.animate(
+            { opacity: [1, 0], scale: [1, 0.9] },
+            { duration: 450, easing: 'ease', fill: 'forwards' },
+          ).finished,
+          art.animate({ transform: [from, 'none'] }, { duration: FLIGHT_MS, easing: FLIGHT_EASING })
+            .finished,
+          spin.animate({ rotate: ['-360deg', '0deg'] }, { duration: FLIGHT_MS, easing: FLIGHT_EASING })
+            .finished,
+        ]);
+      } else {
+        await star.animate({ opacity: [1, 0] }, { duration: 200, fill: 'forwards' }).finished;
+      }
+
+      card.style.opacity = '';
+      await card.animate(
+        { opacity: [0, 1], translate: motion() ? ['16px 0', '0 0'] : ['0 0', '0 0'] },
+        { duration: 300, easing: 'ease-out' },
+      ).finished;
+
+      heading?.focus({ preventScroll: true });
+      busy = false;
+    }
+
+    async function goToProject(id: string) {
+      if (busy || !project || id === project) return;
+      busy = true;
+
+      const previous = partsOf(project);
+      const next = partsOf(id);
+      miniFor(project)?.classList.remove('is-away');
+      miniFor(id)?.classList.add('is-away');
+
+      await fade(previous.card, 1, 0, 150);
+      // Half a turn out with the old project, half a turn in with the new one.
+      if (motion()) {
+        await previous.spin.animate(
+          { rotate: ['0deg', '180deg'], opacity: [1, 0], scale: [1, 0.9] },
+          { duration: NEXT_MS / 2, easing: 'ease-in', fill: 'forwards' },
+        ).finished;
+      }
+
+      showProjectPanel(id);
+      cancelAnimations(previous.spin, previous.card);
+      project = id;
+      next.card.style.opacity = '0';
+
+      if (motion()) {
+        await next.spin.animate(
+          { rotate: ['180deg', '360deg'], opacity: [0, 1], scale: [0.9, 1] },
+          { duration: NEXT_MS / 2, easing: 'ease-out' },
+        ).finished;
+      }
+
+      next.card.style.opacity = '';
+      await next.card.animate(
+        { opacity: [0, 1], translate: motion() ? ['16px 0', '0 0'] : ['0 0', '0 0'] },
+        { duration: 300, easing: 'ease-out' },
+      ).finished;
+
+      next.heading?.focus({ preventScroll: true });
+      busy = false;
+    }
+
+    async function closeProject() {
+      if (busy || !project) return;
+      busy = true;
+
+      const { art, spin, card } = partsOf(project);
+      const mini = miniFor(project);
+
+      await fade(card, 1, 0, 150);
+
+      if (motion()) {
+        const to = flipBetween(mini?.querySelector('[data-star-art]'), art);
+        await Promise.all([
+          art.animate(
+            { transform: ['none', to] },
+            { duration: FLIGHT_MS * 0.8, easing: FLIGHT_EASING, fill: 'forwards' },
+          ).finished,
+          spin.animate(
+            { rotate: ['0deg', '360deg'] },
+            { duration: FLIGHT_MS * 0.8, easing: FLIGHT_EASING, fill: 'forwards' },
+          ).finished,
+          star.animate(
+            { opacity: [0, 1], scale: [0.9, 1] },
+            { duration: 450, delay: FLIGHT_MS * 0.3, easing: 'ease', fill: 'forwards' },
+          ).finished,
+        ]);
+      } else {
+        await star.animate({ opacity: [0, 1] }, { duration: 200, fill: 'forwards' }).finished;
+      }
+
+      resetProjectLayer();
+      if (current) dialog.setAttribute('aria-labelledby', `section-title-${current}`);
+      mini?.focus({ preventScroll: true });
+      busy = false;
+    }
+
     // --- Routing ---------------------------------------------------------
 
-    const setHash = (id: string | null, mode: 'push' | 'replace') => {
-      const url = id ? `#${id}` : location.pathname + location.search;
-      history[mode === 'push' ? 'pushState' : 'replaceState'](null, '', url);
+    /** Reads `#section` or `#section/project`; unknown parts become null. */
+    const parse = (hash: string) => {
+      const [sectionPart = '', projectPart = ''] = decodeURIComponent(hash.replace(/^#/, '')).split('/');
+      const section = articles.has(sectionPart) ? sectionPart : null;
+      const projectId =
+        section && section === projectSectionId && projectPanels.has(projectPart) ? projectPart : null;
+      return { section, project: projectId };
     };
 
-    // Any in-page link to a section opens it instead of jumping.
+    let routing = false;
+    let pending = false;
+
+    /** Animate from the current state to whatever the URL hash describes. */
+    async function route() {
+      if (routing) {
+        pending = true;
+        return;
+      }
+      routing = true;
+      do {
+        pending = false;
+        const target = parse(location.hash);
+
+        if (!target.section) {
+          if (current) await close();
+        } else if (!current) {
+          await open(target.section);
+          if (target.project) await openProject(target.project);
+        } else if (target.section !== current) {
+          if (project) await closeProject();
+          await goTo(target.section);
+          if (target.project) await openProject(target.project);
+        } else if (target.project && target.project !== project) {
+          await (project ? goToProject(target.project) : openProject(target.project));
+        } else if (!target.project && project) {
+          await closeProject();
+        }
+      } while (pending);
+      routing = false;
+    }
+
+    /** Going deeper adds a history entry (so Back returns); everything else replaces. */
+    const navigate = (hash: string | null) => {
+      const depth = (h: string | null) => {
+        if (!h) return 0;
+        const target = parse(h);
+        return target.project ? 2 : target.section ? 1 : 0;
+      };
+      const currentDepth = project ? 2 : current ? 1 : 0;
+      const url = hash ?? location.pathname + location.search;
+      if (depth(hash) > currentDepth) history.pushState(null, '', url);
+      else history.replaceState(null, '', url);
+      void route();
+    };
+
+    // Any in-page link to a known route opens it instead of jumping.
     document.addEventListener('click', (event) => {
       const link = (event.target as HTMLElement).closest<HTMLAnchorElement>('a[href^="#"]');
-      const id = link?.hash.slice(1);
-      if (!link || !id || !articles.has(id)) return;
+      if (!link || !parse(link.hash).section) return;
       event.preventDefault();
-      if (busy) return;
-      setHash(id, current ? 'replace' : 'push');
-      void open(id);
+      navigate(link.hash);
     });
 
-    // Browser Back / Forward.
-    window.addEventListener('popstate', () => {
-      const id = sectionFromHash();
-      if (id) void open(id);
-      else void close();
-    });
+    window.addEventListener('popstate', () => void route());
 
-    dialog.querySelector('[data-section-close]')!.addEventListener('click', () => {
-      if (busy) return;
-      setHash(null, 'replace');
-      void close();
-    });
+    const goBack = () => navigate(project && current ? `#${current}` : null);
+
+    dialog.querySelector('[data-section-close]')!.addEventListener('click', goBack);
 
     dialog.querySelector('[data-section-next]')!.addEventListener('click', () => {
-      if (busy || !current) return;
-      const next = ids[(ids.indexOf(current) + 1) % ids.length];
-      setHash(next, 'replace');
-      void goTo(next);
+      if (!current) return;
+      if (project) {
+        const next = projectIds[(projectIds.indexOf(project) + 1) % projectIds.length];
+        navigate(`#${current}/${next}`);
+      } else {
+        navigate(`#${ids[(ids.indexOf(current) + 1) % ids.length]}`);
+      }
     });
 
-    // Escape: run the animated close instead of the instant native one.
+    // Escape: same as "Volver", animated instead of the instant native close.
     dialog.addEventListener('cancel', (event) => {
       event.preventDefault();
-      if (busy) return;
-      setHash(null, 'replace');
-      void close();
+      goBack();
     });
 
-    // Deep link (e.g. /#about) once the page has loaded.
-    const initial = sectionFromHash();
-    if (initial) void open(initial);
+    // Deep link (e.g. /#about or /#work/loopies) once the page has loaded.
+    if (parse(location.hash).section) void route();
 
     // Warm the cache for the heavy star artwork without delaying first paint.
     const preload = () =>
@@ -458,7 +672,7 @@ const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
   }
 
   /* Sections with a project browser need the vertical space. */
-  .section-star__article:has([data-projects]) {
+  .section-star__article:has([data-project-mini]) {
     gap: 2.6cqw;
   }
 
