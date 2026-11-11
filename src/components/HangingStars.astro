@@ -1,0 +1,468 @@
+---
+/**
+ * Section navigation rendered as leopard-print stars hanging from ropes.
+ *
+ * Behaviour (progressively enhanced; without JS the stars simply sit in place):
+ * - Drop-in: when the row scrolls into view each star falls from the top of the
+ *   anchor element on an elastic rope and bounces before settling (staggered).
+ * - Sway: hovering or focusing a star gives it a push in the pointer's direction;
+ *   it swings like a pendulum pivoting at the rope's anchor and calms down.
+ *
+ * The rope is anchored to the closest `[data-rope-anchor]` ancestor (falls back
+ * to the page top), so its length adapts to any layout or breakpoint.
+ */
+interface StarLink {
+  label: string;
+  href: string;
+}
+
+interface Props {
+  items: StarLink[];
+  label?: string;
+}
+
+const { items, label = 'Sections' } = Astro.props;
+
+// Sparkles placed around the star's points (percentages of the star box).
+// `size` is relative to the star width; `delay` staggers the twinkle.
+const sparkles = [
+  { x: 4, y: 20, size: 0.17, delay: 0 },
+  { x: 88, y: 8, size: 0.22, delay: 180 },
+  { x: 100, y: 70, size: 0.14, delay: 360 },
+  { x: 10, y: 90, size: 0.18, delay: 520 },
+];
+---
+
+<nav class="stars" aria-label={label} data-hanging-stars>
+  <ul class="stars__list">
+    {
+      items.map((item, index) => (
+        <li
+          class="stars__slot"
+          style={`--i:${index}`}
+          data-star-slot
+          data-section={item.href.replace('#', '')}
+        >
+          <div class="stars__swing" data-star-swing>
+            <a class="stars__star" href={item.href} data-star-body>
+              <span class="stars__rope" aria-hidden="true" data-star-rope />
+              <span class="stars__aura" aria-hidden="true" />
+              <img
+                class="stars__image"
+                src="/images/star-leopard.png"
+                width="265"
+                height="242"
+                alt=""
+                draggable="false"
+              />
+              <span class="stars__sparkles" aria-hidden="true">
+                {sparkles.map((s) => (
+                  <span
+                    class="stars__sparkle"
+                    style={`--x:${s.x}%;--y:${s.y}%;--size:${s.size};--delay:${s.delay}ms`}
+                  />
+                ))}
+              </span>
+              <span class="stars__label">{item.label}</span>
+            </a>
+          </div>
+        </li>
+      ))
+    }
+  </ul>
+</nav>
+
+<script>
+  interface Star {
+    slot: HTMLElement;
+    swing: HTMLElement;
+    body: HTMLElement;
+    rope: HTMLElement;
+    /** Vertical offset from the resting position, in px (negative = above). */
+    y: number;
+    vy: number;
+    /** Horizontal displacement of the star along its swing arc, in px. */
+    sway: number;
+    vSway: number;
+    /** Timestamp after which the star may start falling. */
+    releaseAt: number;
+    state: 'waiting' | 'falling' | 'hanging';
+  }
+
+  // Elastic drop: underdamped spring so the star bounces a couple of times.
+  const DROP_STIFFNESS = 110;
+  const DROP_DAMPING = 9;
+  // Pendulum swing: lower stiffness for a slow, heavy sway.
+  const SWAY_STIFFNESS = 10;
+  const SWAY_DAMPING = 1.6;
+  const MAX_SWAY_SPEED = 150; // px/s — keeps the hover push subtle
+  const DROP_STAGGER_MS = 140;
+  // Portion of the star image the rope tucks behind, so it meets the top point.
+  const ROPE_OVERLAP = 0.08;
+
+  const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
+
+  function initHangingStars(root: HTMLElement) {
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const anchor = root.closest<HTMLElement>('[data-rope-anchor]');
+
+    const stars: Star[] = [...root.querySelectorAll<HTMLElement>('[data-star-slot]')].map(
+      (slot) => ({
+        slot,
+        swing: slot.querySelector<HTMLElement>('[data-star-swing]')!,
+        body: slot.querySelector<HTMLElement>('[data-star-body]')!,
+        rope: slot.querySelector<HTMLElement>('[data-star-rope]')!,
+        y: 0,
+        vy: 0,
+        sway: 0,
+        vSway: 0,
+        releaseAt: 0,
+        state: reducedMotion ? 'hanging' : 'waiting',
+      }),
+    );
+
+    /** Distance from the rope anchor to the top of the star's resting slot. */
+    const measureDrop = (star: Star) => {
+      const anchorTop = anchor ? anchor.getBoundingClientRect().top : -window.scrollY;
+      return star.slot.getBoundingClientRect().top - anchorTop;
+    };
+
+    const paint = (star: Star) => {
+      const drop = measureDrop(star);
+      const height = star.slot.offsetHeight;
+      const ropeLength = drop + height * ROPE_OVERLAP;
+      const angle = Math.atan2(star.sway, ropeLength) * (180 / Math.PI);
+
+      star.swing.style.transformOrigin = `50% ${-drop}px`;
+      star.swing.style.transform = `rotate(${angle.toFixed(3)}deg)`;
+      star.body.style.transform = `translateY(${star.y.toFixed(2)}px)`;
+      star.rope.style.height = `${Math.max(0, ropeLength + star.y)}px`;
+    };
+
+    let frame = 0;
+    let lastTime = 0;
+
+    const tick = (time: number) => {
+      const dt = Math.min((time - lastTime) / 1000, 1 / 30);
+      lastTime = time;
+      let active = false;
+
+      for (const star of stars) {
+        if (star.state === 'waiting') {
+          if (star.releaseAt && time >= star.releaseAt) {
+            star.state = 'falling';
+            // A small random sideways nudge so each star lands with its own sway.
+            star.vSway = (Math.random() - 0.5) * 80;
+          }
+          if (star.releaseAt) active = true;
+          continue;
+        }
+
+        if (star.state === 'falling') {
+          star.vy += (-DROP_STIFFNESS * star.y - DROP_DAMPING * star.vy) * dt;
+          star.y += star.vy * dt;
+          if (Math.abs(star.y) < 0.3 && Math.abs(star.vy) < 3) {
+            star.y = 0;
+            star.vy = 0;
+            star.state = 'hanging';
+          }
+        }
+
+        star.vSway += (-SWAY_STIFFNESS * star.sway - SWAY_DAMPING * star.vSway) * dt;
+        star.sway += star.vSway * dt;
+        if (Math.abs(star.sway) < 0.05 && Math.abs(star.vSway) < 0.5) {
+          star.sway = 0;
+          star.vSway = 0;
+        }
+
+        paint(star);
+        if (star.state === 'falling' || star.sway !== 0 || star.vSway !== 0) active = true;
+      }
+
+      frame = active ? requestAnimationFrame(tick) : 0;
+    };
+
+    const wake = () => {
+      if (!frame) {
+        lastTime = performance.now();
+        frame = requestAnimationFrame(tick);
+      }
+    };
+
+    // Start every star just above the anchor, with its rope fully retracted.
+    const hideAboveAnchor = (star: Star) => {
+      star.y = -(measureDrop(star) + star.slot.offsetHeight + 24);
+      star.vy = 0;
+      paint(star);
+    };
+
+    if (reducedMotion) {
+      stars.forEach(paint);
+    } else {
+      stars.forEach(hideAboveAnchor);
+
+      const observer = new IntersectionObserver(
+        (entries) => {
+          if (!entries.some((entry) => entry.isIntersecting)) return;
+          const now = performance.now();
+          stars.forEach((star, index) => {
+            star.releaseAt = now + index * DROP_STAGGER_MS;
+          });
+          observer.disconnect();
+          wake();
+        },
+        { threshold: 0.25 },
+      );
+      observer.observe(root);
+    }
+
+    root.classList.add('is-ready');
+
+    const push = (star: Star, velocity: number) => {
+      if (reducedMotion || star.state === 'waiting') return;
+      star.vSway = clamp(star.vSway + velocity, -MAX_SWAY_SPEED, MAX_SWAY_SPEED);
+      wake();
+    };
+
+    stars.forEach((star) => {
+      star.body.addEventListener('pointerenter', (event) => {
+        // Push away from the side the pointer came in from.
+        const rect = star.body.getBoundingClientRect();
+        const fromLeft = event.clientX < rect.left + rect.width / 2;
+        push(star, fromLeft ? 70 : -70);
+      });
+
+      star.body.addEventListener('pointermove', (event) => {
+        push(star, event.movementX * 2.2);
+      });
+
+      star.body.addEventListener('focus', () => push(star, 60));
+    });
+
+    // Layout changes (resize, late font loading) alter rope lengths: repaint.
+    const repaint = () => stars.forEach((star) => star.state !== 'waiting' && paint(star));
+    new ResizeObserver(repaint).observe(document.documentElement);
+    document.fonts?.ready.then(repaint);
+  }
+
+  document.querySelectorAll<HTMLElement>('[data-hanging-stars]').forEach(initHangingStars);
+</script>
+
+<style>
+  .stars {
+    --gap: clamp(20px, 2.3vw, 44px);
+    --star-w: min(220px, calc((100vw - 2 * var(--page-gutter) - 3 * var(--gap)) / 4));
+    width: 100%;
+  }
+
+  .stars__list {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--gap);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .stars__slot {
+    position: relative;
+    /* Earlier stars stack above later ones so ropes of a second row pass behind the first. */
+    z-index: calc(10 - var(--i));
+    width: var(--star-w);
+    aspect-ratio: 265 / 242;
+  }
+
+  /* The star is "away" while it is open as a section (see SectionDialog). */
+  .stars__slot.is-away .stars__star {
+    visibility: hidden;
+  }
+
+  .stars__swing {
+    width: 100%;
+    height: 100%;
+    will-change: transform;
+  }
+
+  .stars__star {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: 100%;
+    color: var(--color-white);
+    text-decoration: none;
+    font-family: var(--font-ui);
+    font-size: calc(var(--star-w) * 0.12);
+    will-change: transform;
+  }
+
+  /* Hide the stars until JS has positioned them, only when the drop will play. */
+  @media (prefers-reduced-motion: no-preference) {
+    :global(.js) .stars:not(.is-ready) .stars__star {
+      visibility: hidden;
+    }
+  }
+
+  .stars__rope {
+    position: absolute;
+    bottom: calc(100% * (1 - 0.08));
+    left: 50%;
+    width: 3px;
+    height: 0;
+    translate: -50% 0;
+    border-radius: 2px;
+    /* Twisted-cord look: diagonal stripes in two browns. */
+    background: repeating-linear-gradient(
+      -50deg,
+      var(--color-brown) 0 3px,
+      #7a4a1c 3px 6px
+    );
+    pointer-events: none;
+  }
+
+  .stars__image {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    filter: drop-shadow(0 0 0 rgb(255 196 92 / 0));
+    transition:
+      scale 0.25s ease,
+      filter 0.35s ease;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  /* --- Hover / focus glow ------------------------------------------------ */
+
+  /* Warm halo behind the star. */
+  .stars__aura {
+    position: absolute;
+    inset: -18%;
+    border-radius: 50%;
+    background: radial-gradient(
+      circle,
+      rgb(255 214 140 / 0.75) 0%,
+      rgb(255 184 77 / 0.35) 38%,
+      rgb(255 184 77 / 0) 68%
+    );
+    opacity: 0;
+    scale: 0.6;
+    transition:
+      opacity 0.35s ease,
+      scale 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+    pointer-events: none;
+  }
+
+  .stars__sparkles {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  /* Four-pointed twinkle. */
+  .stars__sparkle {
+    position: absolute;
+    top: var(--y);
+    left: var(--x);
+    width: calc(var(--star-w) * var(--size));
+    aspect-ratio: 1;
+    translate: -50% -50%;
+    /* Soft edges + halo. Lives on the wrapper because clip-path on the same
+       element would cut the blur off. */
+    filter: blur(1.2px) drop-shadow(0 0 6px rgb(242 180 67 / 0.85));
+    opacity: 0;
+    scale: 0;
+    transition:
+      opacity 0.2s ease,
+      scale 0.3s ease;
+  }
+
+  .stars__sparkle::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    /* Gold body with a light core so it reads on the cream background. */
+    background: radial-gradient(circle, #fff3d1 0 10%, #f0b247 30%, #d08a26 100%);
+    clip-path: polygon(50% 0, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0 50%, 40% 40%);
+  }
+
+  .stars__star:hover .stars__image,
+  .stars__star:focus-visible .stars__image {
+    scale: 1.04;
+    filter: drop-shadow(0 0 calc(var(--star-w) * 0.05) rgb(255 196 92 / 0.9))
+      drop-shadow(0 0 calc(var(--star-w) * 0.12) rgb(255 170 60 / 0.45));
+  }
+
+  .stars__star:hover .stars__aura,
+  .stars__star:focus-visible .stars__aura {
+    opacity: 1;
+    scale: 1;
+    animation: aura-pulse 2.4s ease-in-out 0.45s infinite;
+  }
+
+  .stars__star:hover .stars__sparkle,
+  .stars__star:focus-visible .stars__sparkle {
+    opacity: 1;
+    scale: 1;
+    animation: sparkle-twinkle 1.4s ease-in-out var(--delay) infinite;
+  }
+
+  @keyframes aura-pulse {
+    0%,
+    100% {
+      scale: 1;
+      opacity: 1;
+    }
+    50% {
+      scale: 1.08;
+      opacity: 0.7;
+    }
+  }
+
+  @keyframes sparkle-twinkle {
+    0%,
+    100% {
+      scale: 1;
+      rotate: 0deg;
+      opacity: 1;
+    }
+    50% {
+      scale: 0.35;
+      rotate: 45deg;
+      opacity: 0.5;
+    }
+  }
+
+  .stars__label {
+    position: relative;
+    white-space: nowrap;
+  }
+
+  @media (max-width: 719px) {
+    .stars {
+      --gap: 20px;
+      --star-w: min(38vw, 170px);
+    }
+
+    .stars__list {
+      row-gap: 28px;
+    }
+
+    .stars__star {
+      font-size: calc(var(--star-w) * 0.13);
+    }
+  }
+
+  /* Keep the glow (it's feedback), drop the looping motion. */
+  @media (prefers-reduced-motion: reduce) {
+    .stars__image,
+    .stars__aura,
+    .stars__sparkle {
+      transition: none;
+      animation: none !important;
+    }
+  }
+</style>
