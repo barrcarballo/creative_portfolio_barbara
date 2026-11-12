@@ -22,9 +22,14 @@ El libro de visitas usa Supabase (ver [Fuente de datos externa](#fuente-de-datos
 Creá un archivo `.env` en la raíz con:
 
 ```bash
-PUBLIC_SUPABASE_URL=https://tu-proyecto.supabase.co
-PUBLIC_SUPABASE_ANON_KEY=tu-clave-anon-public
+SUPABASE_URL=https://tu-proyecto.supabase.co
+SUPABASE_ANON_KEY=tu-clave-anon-public
 ```
+
+Las mismas variables van en el deploy (Vercel → Settings → Environment Variables, entorno
+**Production**) y requieren un nuevo deploy para aplicarse, porque se incrustan en el build.
+Se declaran como públicas en `astro.config.mjs` (`env.schema`, módulo `astro:env/client`):
+solo esas dos llegan al navegador.
 
 Sin estas variables el sitio funciona igual: el libro de visitas muestra el estado
 "todavía no está conectado" y deshabilita el envío.

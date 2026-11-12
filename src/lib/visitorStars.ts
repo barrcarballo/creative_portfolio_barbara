@@ -13,6 +13,9 @@
  * a specific message instead of a generic "something went wrong".
  */
 
+// Declared in astro.config.mjs (`env.schema`) as public client variables.
+import { SUPABASE_ANON_KEY, SUPABASE_URL } from 'astro:env/client';
+
 export interface VisitorStar {
   id: number;
   name: string;
@@ -54,9 +57,6 @@ export const LIMITS = { name: 30, message: 140 } as const;
 /** Most recent stars shown in the sky. */
 const MAX_STARS = 150;
 const TIMEOUT_MS = 8000;
-
-const SUPABASE_URL = import.meta.env.PUBLIC_SUPABASE_URL as string | undefined;
-const SUPABASE_ANON_KEY = import.meta.env.PUBLIC_SUPABASE_ANON_KEY as string | undefined;
 
 export const isConfigured = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 
