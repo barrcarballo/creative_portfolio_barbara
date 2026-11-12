@@ -8,8 +8,9 @@ import type { ImageMetadata } from 'astro';
  * - `src/assets/projects/<id>/ficha/*`  → shown in the project card, under the description.
  *
  * How each gallery image fills the star:
- * - Photos (jpg, png, webp, avif) cover the whole star and get cropped.
- * - SVGs are treated as logos: shown whole and centred, never cropped.
+ * - Logos — any SVG, or any file with "logo" in its name — are shown whole
+ *   and centred, never cropped.
+ * - Everything else (photos, mockups) covers the whole star and gets cropped.
  */
 export type ImageFit = 'cover' | 'contain';
 
@@ -31,20 +32,23 @@ const cardModules: Modules = import.meta.glob(
 );
 
 /** Images of one project in a glob result, sorted by file name. */
-function collect(modules: Modules, projectId: string): ImageMetadata[] {
+function collect(modules: Modules, projectId: string) {
   return Object.entries(modules)
     .filter(([path]) => path.split('/projects/')[1]?.split('/')[0] === projectId)
     .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
-    .map(([, module]) => module.default);
+    .map(([path, module]) => ({ path, image: module.default }));
 }
 
+const isLogo = (path: string, image: ImageMetadata) =>
+  image.format === 'svg' || /logo/i.test(path.split('/').at(-1) ?? '');
+
 export function getProjectImages(projectId: string): ProjectImage[] {
-  return collect(galleryModules, projectId).map((image) => ({
+  return collect(galleryModules, projectId).map(({ path, image }) => ({
     src: image,
-    fit: image.format === 'svg' ? 'contain' : 'cover',
+    fit: isLogo(path, image) ? 'contain' : 'cover',
   }));
 }
 
 export function getProjectCardImages(projectId: string): ImageMetadata[] {
-  return collect(cardModules, projectId);
+  return collect(cardModules, projectId).map(({ image }) => image);
 }

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 198.45 67.7">
+  <defs>
+    <style>
+      .cls-1 {
+        font-size: 22.2px;
+      }
+
+      .cls-1, .cls-2 {
+        fill: #2e2e2e;
+        font-family: AvenirNext-Medium, 'Avenir Next';
+        font-weight: 500;
+      }
+
+      .cls-2 {
+        font-size: 43.58px;
+      }
+    </style>
+  </defs>
+  <text class="cls-2" transform="translate(27.46 45.83)"><tspan x="0" y="0">studio</tspan></text>
+  <text class="cls-1" transform="translate(148.05 25.17)"><tspan x="0" y="0">3</tspan></text>
+</svg>
