@@ -17,6 +17,10 @@ export interface Section {
   body?: string;
   /** When present, the section shows a project browser instead of body copy. */
   projects?: Project[];
+  /** When true, the section hosts the visitor guestbook at `#<id>/estrellas`. */
+  guestbook?: boolean;
+  /** Optional call-to-action button under the body. `href` may be an in-page route. */
+  cta?: { label: string; href: string };
 }
 
 export const sections: Section[] = [
@@ -46,6 +50,9 @@ export const sections: Section[] = [
     id: 'contact',
     label: 'Contact',
     title: 'Hablemos',
-    body: 'Contenido en preparación.',
+    // TODO: add contact details (email, socials).
+    body: '¿Pasaste por acá? Dejá tu estrella en el <strong>cielo de visitas</strong>: un nombre, un mensaje y un lugar donde brillar.',
+    guestbook: true,
+    cta: { label: 'Dejá tu estrella', href: '#contact/estrellas' },
   },
 ];

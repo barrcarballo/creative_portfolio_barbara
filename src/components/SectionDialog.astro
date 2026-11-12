@@ -20,6 +20,7 @@
 import type { Section } from '../data/sections';
 import ProjectConstellation from './ProjectConstellation.astro';
 import ProjectDetail from './ProjectDetail.astro';
+import VisitorStars from './VisitorStars.astro';
 
 interface Props {
   sections: Section[];
@@ -27,6 +28,7 @@ interface Props {
 
 const { sections } = Astro.props;
 const projectSection = sections.find((section) => section.projects);
+const guestbookSection = sections.find((section) => section.guestbook);
 const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
 ---
 
@@ -81,6 +83,11 @@ const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
               ) : (
                 <p class="section-star__text" set:html={section.body} />
               )}
+              {section.cta && (
+                <a class="section-star__cta" href={section.cta.href} data-section-cta>
+                  {section.cta.label}
+                </a>
+              )}
             </article>
           );
         })
@@ -89,6 +96,7 @@ const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
   </div>
 
   {projectSection?.projects && <ProjectDetail projects={projectSection.projects} />}
+  {guestbookSection && <VisitorStars sectionId={guestbookSection.id} />}
 </dialog>
 
 <script>
@@ -132,8 +140,15 @@ const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
       dialog.querySelector('[data-project-mini]')?.closest<HTMLElement>('[data-section-content]')
         ?.dataset.sectionContent ?? null;
 
+    // Guestbook level (Contact → `#contact/estrellas`).
+    const GUESTBOOK_ROUTE = 'estrellas';
+    const guestbook = dialog.querySelector<HTMLElement>('[data-guestbook]');
+    const guestbookSectionId = guestbook?.dataset.guestbookSection ?? null;
+    const nextButton = dialog.querySelector<HTMLElement>('[data-section-next]')!;
+
     let current: string | null = null;
     let project: string | null = null;
+    let guestbookOpen = false;
     let busy = false;
 
     const motion = () => !reducedMotion.matches;
@@ -265,6 +280,7 @@ const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
       if (busy || !current) return;
       busy = true;
       if (project) resetProjectLayer();
+      if (guestbookOpen) resetGuestbookLayer();
 
       const slot = slotFor(current);
 
@@ -435,15 +451,80 @@ const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
       busy = false;
     }
 
+    // --- Guestbook level -------------------------------------------------
+
+    /** Instantly hide the guestbook (used when leaving the dialog directly). */
+    function resetGuestbookLayer() {
+      if (guestbook) {
+        cancelAnimations(guestbook);
+        guestbook.hidden = true;
+      }
+      cancelAnimations(star);
+      star.inert = false;
+      nextButton.style.removeProperty('visibility');
+      guestbookOpen = false;
+    }
+
+    async function openGuestbook() {
+      if (busy || !guestbook || current !== guestbookSectionId || guestbookOpen) return;
+      busy = true;
+      guestbookOpen = true;
+
+      guestbook.hidden = false;
+      star.inert = true;
+      // "Siguiente" has no meaning inside the guestbook.
+      nextButton.style.visibility = 'hidden';
+      dialog.setAttribute('aria-labelledby', 'guestbook-title');
+      guestbook.dispatchEvent(new CustomEvent('guestbook:open'));
+
+      await Promise.all([
+        star.animate(
+          { opacity: [1, 0], scale: [1, motion() ? 0.85 : 1] },
+          { duration: motion() ? 450 : 200, easing: 'ease', fill: 'forwards' },
+        ).finished,
+        guestbook.animate(
+          { opacity: [0, 1], scale: [motion() ? 1.04 : 1, 1] },
+          { duration: motion() ? 550 : 200, delay: motion() ? 150 : 0, easing: 'ease-out', fill: 'backwards' },
+        ).finished,
+      ]);
+
+      guestbook.querySelector<HTMLElement>('#guestbook-title')?.focus({ preventScroll: true });
+      busy = false;
+    }
+
+    async function closeGuestbook() {
+      if (busy || !guestbook || !guestbookOpen) return;
+      busy = true;
+
+      await Promise.all([
+        guestbook.animate({ opacity: [1, 0] }, { duration: 250, easing: 'ease-in', fill: 'forwards' }).finished,
+        star.animate(
+          { opacity: [0, 1], scale: [motion() ? 0.85 : 1, 1] },
+          { duration: motion() ? 450 : 200, delay: 120, easing: 'ease-out', fill: 'forwards' },
+        ).finished,
+      ]);
+
+      resetGuestbookLayer();
+      if (current) dialog.setAttribute('aria-labelledby', `section-title-${current}`);
+      dialog.querySelector<HTMLElement>('[data-section-cta]')?.focus({ preventScroll: true });
+      busy = false;
+    }
+
     // --- Routing ---------------------------------------------------------
 
-    /** Reads `#section` or `#section/project`; unknown parts become null. */
+    /**
+     * Reads `#section`, `#section/<project>` or `#section/estrellas`;
+     * unknown parts become null/false.
+     */
     const parse = (hash: string) => {
-      const [sectionPart = '', projectPart = ''] = decodeURIComponent(hash.replace(/^#/, '')).split('/');
+      const [sectionPart = '', subPart = ''] = decodeURIComponent(hash.replace(/^#/, '')).split('/');
       const section = articles.has(sectionPart) ? sectionPart : null;
       const projectId =
-        section && section === projectSectionId && projectPanels.has(projectPart) ? projectPart : null;
-      return { section, project: projectId };
+        section && section === projectSectionId && projectPanels.has(subPart) ? subPart : null;
+      const wantsGuestbook = Boolean(
+        section && section === guestbookSectionId && subPart === GUESTBOOK_ROUTE,
+      );
+      return { section, project: projectId, guestbook: wantsGuestbook };
     };
 
     let routing = false;
@@ -465,14 +546,21 @@ const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
         } else if (!current) {
           await open(target.section);
           if (target.project) await openProject(target.project);
+          if (target.guestbook) await openGuestbook();
         } else if (target.section !== current) {
           if (project) await closeProject();
+          if (guestbookOpen) await closeGuestbook();
           await goTo(target.section);
           if (target.project) await openProject(target.project);
+          if (target.guestbook) await openGuestbook();
         } else if (target.project && target.project !== project) {
           await (project ? goToProject(target.project) : openProject(target.project));
+        } else if (target.guestbook && !guestbookOpen) {
+          await openGuestbook();
         } else if (!target.project && project) {
           await closeProject();
+        } else if (!target.guestbook && guestbookOpen) {
+          await closeGuestbook();
         }
       } while (pending);
       routing = false;
@@ -483,9 +571,9 @@ const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
       const depth = (h: string | null) => {
         if (!h) return 0;
         const target = parse(h);
-        return target.project ? 2 : target.section ? 1 : 0;
+        return target.project || target.guestbook ? 2 : target.section ? 1 : 0;
       };
-      const currentDepth = project ? 2 : current ? 1 : 0;
+      const currentDepth = project || guestbookOpen ? 2 : current ? 1 : 0;
       const url = hash ?? location.pathname + location.search;
       if (depth(hash) > currentDepth) history.pushState(null, '', url);
       else history.replaceState(null, '', url);
@@ -502,12 +590,12 @@ const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
 
     window.addEventListener('popstate', () => void route());
 
-    const goBack = () => navigate(project && current ? `#${current}` : null);
+    const goBack = () => navigate((project || guestbookOpen) && current ? `#${current}` : null);
 
     dialog.querySelector('[data-section-close]')!.addEventListener('click', goBack);
 
-    dialog.querySelector('[data-section-next]')!.addEventListener('click', () => {
-      if (!current) return;
+    nextButton.addEventListener('click', () => {
+      if (!current || guestbookOpen) return;
       if (project) {
         const next = projectIds[(projectIds.indexOf(project) + 1) % projectIds.length];
         navigate(`#${current}/${next}`);
@@ -694,6 +782,27 @@ const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
   .section-star__accent {
     display: block;
     color: #e87e01;
+  }
+
+  .section-star__cta {
+    margin-top: -2cqw;
+    padding: 0.7em 1.6em;
+    border-radius: var(--radius-pill);
+    background: var(--color-brown);
+    color: var(--color-cream);
+    font-family: var(--font-ui);
+    font-size: max(15px, 1.7cqw);
+    text-decoration: none;
+    transition: translate 0.2s ease;
+  }
+
+  .section-star__cta:hover {
+    translate: 0 -2px;
+  }
+
+  .section-star__cta:focus-visible {
+    outline: 2px solid var(--color-brown);
+    outline-offset: 3px;
   }
 
   .section-star__text {

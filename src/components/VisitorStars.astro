@@ -1,0 +1,754 @@
+---
+/**
+ * Visitor guestbook shown as a night sky inside SectionDialog
+ * (route `#<sectionId>/estrellas`). Visitors leave a star with their name and a
+ * short message; everyone sees the shared constellation.
+ *
+ * Data comes from Supabase via `lib/visitorStars.ts`. States handled:
+ * loading, ready, empty, error (with retry), not configured, sending, sent,
+ * validation errors and a short cooldown between posts.
+ *
+ * SectionDialog shows/hides this layer and dispatches `guestbook:open` on it;
+ * everything inside is handled here.
+ */
+import { LIMITS } from '../lib/visitorStars';
+
+interface Props {
+  sectionId: string;
+}
+
+const { sectionId } = Astro.props;
+---
+
+<div class="guestbook" data-guestbook data-guestbook-section={sectionId} hidden>
+  <div class="guestbook__layout">
+    <section class="guestbook__sky-wrap" aria-labelledby="guestbook-title">
+      <header class="guestbook__header">
+        <h2 class="guestbook__title" id="guestbook-title" tabindex="-1">
+          <span class="guestbook__initial">C</span>ielo de visitas
+        </h2>
+        <p class="guestbook__count" data-count aria-live="polite"></p>
+      </header>
+
+      <div
+        class="guestbook__sky"
+        role="group"
+        aria-label="Estrellas que dejaron las visitas. Tocá el cielo para elegir dónde va la tuya."
+        data-sky
+      >
+        <div class="guestbook__stars" data-stars></div>
+        <span class="guestbook__ghost" aria-hidden="true" data-ghost hidden></span>
+
+        <div class="guestbook__state" data-state hidden>
+          <p class="guestbook__state-text" data-state-text></p>
+          <button class="guestbook__retry" type="button" data-retry hidden>Reintentar</button>
+        </div>
+
+        <div class="guestbook__tooltip" role="tooltip" data-tooltip hidden>
+          <strong class="guestbook__tooltip-name" data-tooltip-name></strong>
+          <span class="guestbook__tooltip-message" data-tooltip-message></span>
+          <time class="guestbook__tooltip-date" data-tooltip-date></time>
+        </div>
+      </div>
+    </section>
+
+    <form class="guestbook__form" novalidate data-form>
+      <h3 class="guestbook__form-title">
+        <span class="guestbook__initial">D</span>ejá tu estrella
+      </h3>
+
+      <label class="guestbook__field">
+        <span class="guestbook__label">Tu nombre</span>
+        <input
+          class="guestbook__input"
+          name="name"
+          type="text"
+          maxlength={LIMITS.name}
+          autocomplete="nickname"
+          required
+        />
+      </label>
+
+      <label class="guestbook__field">
+        <span class="guestbook__label">Tu mensaje</span>
+        <textarea
+          class="guestbook__input guestbook__textarea"
+          name="message"
+          rows="3"
+          maxlength={LIMITS.message}
+          required
+          aria-describedby="guestbook-counter"></textarea>
+        <span class="guestbook__counter" id="guestbook-counter" data-counter>0 / {LIMITS.message}</span>
+      </label>
+
+      <p class="guestbook__hint" data-hint>
+        Tocá el cielo para elegir dónde brilla tu estrella. Si no, la ubicamos nosotras.
+      </p>
+
+      <p class="guestbook__feedback" role="status" aria-live="polite" data-feedback></p>
+
+      <button class="guestbook__submit" type="submit" data-submit>
+        <span data-submit-label>Enviar estrella</span>
+      </button>
+    </form>
+  </div>
+</div>
+
+<script>
+  import {
+    addStar,
+    fetchStars,
+    isConfigured,
+    LIMITS,
+    StarsError,
+    validate,
+    type StarsErrorKind,
+    type VisitorStar,
+  } from '../lib/visitorStars';
+
+  const COOLDOWN_MS = 60_000;
+  const COOLDOWN_KEY = 'visitor-star:last-post';
+  const REFRESH_AFTER_MS = 30_000;
+
+  const ERROR_MESSAGES: Record<StarsErrorKind, string> = {
+    'not-configured': 'El cielo de visitas todavía no está conectado.',
+    offline: 'Parece que no hay conexión. Revisá tu internet y probá de nuevo.',
+    timeout: 'El cielo tardó demasiado en responder. Probá de nuevo en un ratito.',
+    'rate-limit': 'Hay muchas visitas a la vez. Esperá un momento y probá de nuevo.',
+    invalid: 'Tu estrella no pudo guardarse: revisá el nombre y el mensaje.',
+    server: 'Algo falló del lado del servidor. Probá de nuevo más tarde.',
+  };
+
+  const messageFor = (error: unknown) =>
+    error instanceof StarsError ? ERROR_MESSAGES[error.kind] : ERROR_MESSAGES.server;
+
+  const root = document.querySelector<HTMLElement>('[data-guestbook]');
+  if (root) initGuestbook(root);
+
+  function initGuestbook(root: HTMLElement) {
+    const $ = <T extends HTMLElement>(selector: string) => root.querySelector<T>(selector)!;
+
+    const sky = $('[data-sky]');
+    const starsLayer = $('[data-stars]');
+    const ghost = $('[data-ghost]');
+    const count = $('[data-count]');
+    const stateBox = $('[data-state]');
+    const stateText = $('[data-state-text]');
+    const retry = $<HTMLButtonElement>('[data-retry]');
+    const tooltip = $('[data-tooltip]');
+    const form = $<HTMLFormElement>('[data-form]');
+    const nameInput = form.elements.namedItem('name') as HTMLInputElement;
+    const messageInput = form.elements.namedItem('message') as HTMLTextAreaElement;
+    const counter = $('[data-counter]');
+    const hint = $('[data-hint]');
+    const feedback = $('[data-feedback]');
+    const submit = $<HTMLButtonElement>('[data-submit]');
+    const submitLabel = $('[data-submit-label]');
+
+    const dateFormat = new Intl.DateTimeFormat('es-AR', { day: 'numeric', month: 'short' });
+
+    let stars: VisitorStar[] = [];
+    let loadedAt = 0;
+    let loading = false;
+    let pending: { x: number; y: number } | null = null;
+
+    // --- Sky states -------------------------------------------------------
+
+    type SkyState = 'loading' | 'ready' | 'empty' | 'error';
+
+    const setSkyState = (state: SkyState, text = '') => {
+      sky.dataset.state = state;
+      stateBox.hidden = state === 'ready';
+      stateText.textContent =
+        state === 'loading'
+          ? 'Buscando estrellas…'
+          : state === 'empty'
+            ? 'Todavía no hay estrellas. ¡Dejá la primera!'
+            : text;
+      retry.hidden = state !== 'error' || !isConfigured;
+      sky.setAttribute('aria-busy', String(state === 'loading'));
+    };
+
+    const updateCount = () => {
+      count.textContent =
+        stars.length === 0
+          ? ''
+          : stars.length === 1
+            ? '1 estrella brillando'
+            : `${stars.length} estrellas brillando`;
+    };
+
+    // --- Rendering ----------------------------------------------------------
+
+    const starButton = (star: VisitorStar, isNew = false) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = `guestbook__star${isNew ? ' is-new' : ''}`;
+      button.style.left = `${star.x}%`;
+      button.style.top = `${star.y}%`;
+      // Deterministic per star, so twinkles don't reshuffle on re-render.
+      button.style.setProperty('--twinkle-delay', `${(star.id * 397) % 3000}ms`);
+      button.style.setProperty('--size', `${16 + ((star.id * 7) % 10)}px`);
+      // textContent-only: visitor input is never parsed as HTML.
+      button.setAttribute('aria-label', `Estrella de ${star.name}: ${star.message}`);
+      button.addEventListener('mouseenter', () => showTooltip(star));
+      button.addEventListener('focus', () => showTooltip(star));
+      button.addEventListener('mouseleave', hideTooltip);
+      button.addEventListener('blur', hideTooltip);
+      button.addEventListener('click', (event) => {
+        event.stopPropagation(); // don't pick this spot as a new position
+        showTooltip(star);
+      });
+      return button;
+    };
+
+    const render = () => {
+      starsLayer.replaceChildren(...stars.map((star) => starButton(star)));
+      updateCount();
+    };
+
+    const showTooltip = (star: VisitorStar) => {
+      tooltip.querySelector('[data-tooltip-name]')!.textContent = star.name;
+      tooltip.querySelector('[data-tooltip-message]')!.textContent = star.message;
+      const date = tooltip.querySelector<HTMLTimeElement>('[data-tooltip-date]')!;
+      date.dateTime = star.created_at;
+      date.textContent = dateFormat.format(new Date(star.created_at));
+      tooltip.style.left = `${Math.min(85, Math.max(15, star.x))}%`;
+      tooltip.style.top = `${star.y}%`;
+      tooltip.classList.toggle('is-below', star.y < 30);
+      tooltip.hidden = false;
+    };
+
+    function hideTooltip() {
+      tooltip.hidden = true;
+    }
+
+    // --- Loading ------------------------------------------------------------
+
+    async function load() {
+      if (loading) return;
+      if (!isConfigured) {
+        setSkyState('error', ERROR_MESSAGES['not-configured']);
+        return;
+      }
+      loading = true;
+      setSkyState('loading');
+      try {
+        stars = await fetchStars();
+        loadedAt = Date.now();
+        render();
+        setSkyState(stars.length ? 'ready' : 'empty');
+      } catch (error) {
+        setSkyState('error', messageFor(error));
+      } finally {
+        loading = false;
+      }
+    }
+
+    retry.addEventListener('click', () => void load());
+
+    // SectionDialog dispatches this whenever the guestbook becomes visible.
+    root.addEventListener('guestbook:open', () => {
+      if (Date.now() - loadedAt > REFRESH_AFTER_MS) void load();
+    });
+
+    // --- Choosing a position ----------------------------------------------
+
+    sky.addEventListener('click', (event) => {
+      const rect = sky.getBoundingClientRect();
+      // Keep stars away from the edges so they and their tooltips stay visible.
+      const x = Math.min(94, Math.max(6, ((event.clientX - rect.left) / rect.width) * 100));
+      const y = Math.min(92, Math.max(8, ((event.clientY - rect.top) / rect.height) * 100));
+      pending = { x, y };
+      ghost.style.left = `${x}%`;
+      ghost.style.top = `${y}%`;
+      ghost.hidden = false;
+      hint.textContent = '¡Ahí va a brillar tu estrella! Podés tocar otro lugar si querés.';
+      hideTooltip();
+    });
+
+    // --- Form -------------------------------------------------------------
+
+    const updateCounter = () => {
+      const length = messageInput.value.length;
+      counter.textContent = `${length} / ${LIMITS.message}`;
+      counter.classList.toggle('is-near-limit', length > LIMITS.message - 20);
+    };
+    messageInput.addEventListener('input', updateCounter);
+
+    const setFeedback = (text: string, tone: 'info' | 'error' | 'success' = 'info') => {
+      feedback.textContent = text;
+      feedback.dataset.tone = tone;
+    };
+
+    const setSending = (sending: boolean) => {
+      submit.disabled = sending || !isConfigured;
+      submitLabel.textContent = sending ? 'Enviando…' : 'Enviar estrella';
+      form.setAttribute('aria-busy', String(sending));
+    };
+
+    if (!isConfigured) {
+      setSending(false);
+      setFeedback(ERROR_MESSAGES['not-configured'], 'error');
+    }
+
+    const cooldownLeft = () => {
+      const last = Number(localStorage.getItem(COOLDOWN_KEY) ?? 0);
+      return Math.max(0, COOLDOWN_MS - (Date.now() - last));
+    };
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+
+      const draft = { name: nameInput.value, message: messageInput.value };
+      const problem = validate(draft);
+      if (problem) {
+        setFeedback(problem, 'error');
+        (draft.name.trim() ? messageInput : nameInput).focus();
+        return;
+      }
+
+      const wait = cooldownLeft();
+      if (wait > 0) {
+        setFeedback(`Ya dejaste una estrella hace poco. Probá de nuevo en ${Math.ceil(wait / 1000)} segundos.`, 'error');
+        return;
+      }
+
+      const position = pending ?? { x: 10 + Math.random() * 80, y: 12 + Math.random() * 76 };
+
+      setSending(true);
+      setFeedback('');
+      try {
+        const created = await addStar({ ...draft, ...position });
+        localStorage.setItem(COOLDOWN_KEY, String(Date.now()));
+
+        stars = [created, ...stars];
+        starsLayer.append(starButton(created, true));
+        updateCount();
+        setSkyState('ready');
+        showTooltip(created);
+
+        form.reset();
+        updateCounter();
+        pending = null;
+        ghost.hidden = true;
+        hint.textContent = 'Tocá el cielo para elegir dónde brilla tu estrella. Si no, la ubicamos nosotras.';
+        setFeedback('¡Listo! Tu estrella ya brilla en el cielo.', 'success');
+      } catch (error) {
+        setFeedback(messageFor(error), 'error');
+      } finally {
+        setSending(false);
+        // Disabling the focused button drops focus to <body>; give it back.
+        if (document.activeElement === document.body) submit.focus();
+      }
+    });
+  }
+</script>
+
+<style>
+  .guestbook {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .guestbook[hidden] {
+    display: none;
+  }
+
+  .guestbook__layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 380px);
+    align-items: center;
+    gap: clamp(24px, 3vw, 48px);
+    min-height: 100%;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: clamp(88px, 9vh, 112px) clamp(20px, 5vw, 96px) clamp(32px, 5vh, 56px);
+  }
+
+  .guestbook__header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px 16px;
+    margin-bottom: 16px;
+    color: var(--color-cream);
+  }
+
+  .guestbook__title {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: clamp(30px, 3vw, 48px);
+    font-style: italic;
+    font-weight: 400;
+    line-height: 1.05;
+  }
+
+  .guestbook__title:focus {
+    outline: none;
+  }
+
+  .guestbook__initial {
+    font-family: var(--font-script);
+    font-style: normal;
+  }
+
+  .guestbook__count {
+    margin: 0;
+    font-family: var(--font-ui);
+    font-size: 16px;
+    opacity: 0.8;
+  }
+
+  /* --- Sky --- */
+
+  .guestbook__sky {
+    position: relative;
+    height: min(66dvh, 620px);
+    min-height: 320px;
+    overflow: hidden;
+    border-radius: 32px;
+    /* Night sky: deep brown glow plus a sprinkle of tiny background stars. */
+    background:
+      radial-gradient(1px 1px at 12% 22%, rgb(255 236 200 / 0.7), transparent),
+      radial-gradient(1px 1px at 37% 68%, rgb(255 236 200 / 0.5), transparent),
+      radial-gradient(1.5px 1.5px at 58% 14%, rgb(255 236 200 / 0.6), transparent),
+      radial-gradient(1px 1px at 76% 46%, rgb(255 236 200 / 0.5), transparent),
+      radial-gradient(1.5px 1.5px at 88% 82%, rgb(255 236 200 / 0.6), transparent),
+      radial-gradient(1px 1px at 24% 88%, rgb(255 236 200 / 0.4), transparent),
+      radial-gradient(1px 1px at 66% 90%, rgb(255 236 200 / 0.4), transparent),
+      radial-gradient(ellipse at 30% 20%, #4a2a10 0%, transparent 60%),
+      radial-gradient(ellipse at 80% 90%, #3b1d06 0%, transparent 55%),
+      #1a0d02;
+    box-shadow:
+      inset 0 0 80px rgb(0 0 0 / 0.5),
+      0 20px 50px rgb(0 0 0 / 0.35);
+    cursor: crosshair;
+  }
+
+  .guestbook__stars {
+    position: absolute;
+    inset: 0;
+  }
+
+  /* Each visitor star: a four-pointed gold twinkle. */
+  .guestbook__sky :global(.guestbook__star) {
+    position: absolute;
+    width: var(--size, 20px);
+    aspect-ratio: 1;
+    padding: 0;
+    border: 0;
+    translate: -50% -50%;
+    background: radial-gradient(circle, #fff6df 0 10%, #f0b247 32%, #c97a12 100%);
+    clip-path: polygon(50% 0, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0 50%, 40% 40%);
+    filter: drop-shadow(0 0 6px rgb(255 196 92 / 0.9));
+    cursor: pointer;
+    animation: guestbook-twinkle 3s ease-in-out var(--twinkle-delay, 0ms) infinite;
+    transition: scale 0.25s ease;
+  }
+
+  .guestbook__sky :global(.guestbook__star:hover),
+  .guestbook__sky :global(.guestbook__star:focus-visible) {
+    scale: 1.6;
+    animation-play-state: paused;
+    outline: none;
+  }
+
+  .guestbook__sky :global(.guestbook__star.is-new) {
+    animation:
+      guestbook-pop 0.9s cubic-bezier(0.34, 1.56, 0.64, 1),
+      guestbook-twinkle 3s ease-in-out 0.9s infinite;
+  }
+
+  @keyframes guestbook-twinkle {
+    0%,
+    100% {
+      opacity: 1;
+      rotate: 0deg;
+    }
+    50% {
+      opacity: 0.55;
+      rotate: 20deg;
+    }
+  }
+
+  @keyframes guestbook-pop {
+    0% {
+      scale: 0;
+      rotate: -180deg;
+    }
+    60% {
+      scale: 2.2;
+    }
+    100% {
+      scale: 1;
+      rotate: 0deg;
+    }
+  }
+
+  /* Where the visitor's star will go before sending. */
+  .guestbook__ghost {
+    position: absolute;
+    width: 26px;
+    aspect-ratio: 1;
+    translate: -50% -50%;
+    border: 1.5px dashed var(--color-cream);
+    border-radius: 50%;
+    pointer-events: none;
+    animation: guestbook-pulse 1.4s ease-in-out infinite;
+  }
+
+  .guestbook__ghost[hidden] {
+    display: none;
+  }
+
+  @keyframes guestbook-pulse {
+    50% {
+      scale: 1.35;
+      opacity: 0.5;
+    }
+  }
+
+  /* Loading / empty / error message in the middle of the sky. */
+  .guestbook__state {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 14px;
+    padding: 24px;
+    color: var(--color-cream);
+    text-align: center;
+    pointer-events: none;
+  }
+
+  .guestbook__state[hidden] {
+    display: none;
+  }
+
+  .guestbook__state-text {
+    max-width: 32ch;
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: clamp(18px, 1.6vw, 24px);
+    font-style: italic;
+  }
+
+  .guestbook__sky[data-state='loading'] .guestbook__state-text {
+    animation: guestbook-breathe 1.6s ease-in-out infinite;
+  }
+
+  @keyframes guestbook-breathe {
+    50% {
+      opacity: 0.45;
+    }
+  }
+
+  .guestbook__retry {
+    padding: 10px 22px;
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: var(--color-cream);
+    color: var(--color-brown);
+    font-family: var(--font-ui);
+    font-size: 16px;
+    cursor: pointer;
+    pointer-events: auto;
+  }
+
+  .guestbook__retry[hidden] {
+    display: none;
+  }
+
+  .guestbook__tooltip {
+    position: absolute;
+    z-index: 2;
+    display: grid;
+    gap: 4px;
+    width: max-content;
+    max-width: min(260px, 70%);
+    padding: 12px 16px;
+    border-radius: 16px;
+    translate: -50% calc(-100% - 18px);
+    background: var(--color-cream);
+    color: var(--color-brown);
+    box-shadow: 0 10px 30px rgb(0 0 0 / 0.4);
+    pointer-events: none;
+  }
+
+  .guestbook__tooltip.is-below {
+    translate: -50% 18px;
+  }
+
+  .guestbook__tooltip[hidden] {
+    display: none;
+  }
+
+  .guestbook__tooltip-name {
+    font-family: var(--font-ui);
+    font-size: 16px;
+  }
+
+  .guestbook__tooltip-message {
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+  }
+
+  .guestbook__tooltip-date {
+    font-family: var(--font-body);
+    font-size: 12px;
+    opacity: 0.7;
+  }
+
+  /* --- Form --- */
+
+  .guestbook__form {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: clamp(24px, 2.5vw, 36px);
+    border-radius: 32px;
+    background: var(--color-cream);
+    color: var(--color-brown);
+    box-shadow: 0 20px 50px rgb(0 0 0 / 0.3);
+  }
+
+  .guestbook__form-title {
+    margin: 0 0 4px;
+    font-family: var(--font-display);
+    font-size: clamp(26px, 2.2vw, 36px);
+    font-style: italic;
+    font-weight: 400;
+  }
+
+  .guestbook__field {
+    position: relative;
+    display: grid;
+    gap: 6px;
+  }
+
+  .guestbook__label {
+    font-family: var(--font-ui);
+    font-size: 15px;
+  }
+
+  .guestbook__input {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1.5px solid rgb(74 37 0 / 0.35);
+    border-radius: 14px;
+    background: #fff9f2;
+    color: #1d1006;
+    font-family: var(--font-body);
+    font-size: 16px;
+    transition: border-color 0.2s ease;
+  }
+
+  .guestbook__input:focus {
+    border-color: var(--color-brown);
+    outline: none;
+  }
+
+  .guestbook__textarea {
+    resize: none;
+  }
+
+  .guestbook__counter {
+    justify-self: end;
+    font-family: var(--font-body);
+    font-size: 12px;
+    opacity: 0.7;
+  }
+
+  .guestbook__counter.is-near-limit {
+    color: #b35f00;
+    opacity: 1;
+  }
+
+  .guestbook__hint {
+    margin: 0;
+    font-family: var(--font-body);
+    font-size: 14px;
+    line-height: 1.45;
+    opacity: 0.8;
+  }
+
+  .guestbook__feedback {
+    min-height: 1.4em;
+    margin: 0;
+    font-family: var(--font-body);
+    font-size: 14px;
+    line-height: 1.4;
+  }
+
+  .guestbook__feedback[data-tone='error'] {
+    color: #b3261e;
+  }
+
+  .guestbook__feedback[data-tone='success'] {
+    color: #2e7d32;
+  }
+
+  .guestbook__submit {
+    padding: 12px 24px;
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: var(--color-brown);
+    color: var(--color-cream);
+    font-family: var(--font-ui);
+    font-size: 17px;
+    cursor: pointer;
+    transition:
+      translate 0.2s ease,
+      opacity 0.2s ease;
+  }
+
+  .guestbook__submit:hover:not(:disabled) {
+    translate: 0 -2px;
+  }
+
+  .guestbook__submit:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .guestbook__submit:focus-visible,
+  .guestbook__retry:focus-visible {
+    outline: 2px solid var(--color-brown);
+    outline-offset: 3px;
+  }
+
+  @media (max-width: 899px) {
+    .guestbook__layout {
+      grid-template-columns: minmax(0, 1fr);
+      align-content: start;
+      padding-top: 80px;
+    }
+
+    .guestbook__sky {
+      height: 50dvh;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .guestbook__sky :global(.guestbook__star),
+    .guestbook__sky :global(.guestbook__star.is-new),
+    .guestbook__ghost,
+    .guestbook__sky[data-state='loading'] .guestbook__state-text {
+      animation: none;
+    }
+
+    .guestbook__sky :global(.guestbook__star),
+    .guestbook__input,
+    .guestbook__submit {
+      transition: none;
+    }
+  }
+</style>
