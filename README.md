@@ -14,7 +14,16 @@ npm install
 npm run dev       # servidor de desarrollo en http://localhost:4321
 npm run build     # build de producción en ./dist
 npm run preview   # sirve el build localmente
+npm run optimize-images  # regenera public/images/*.webp desde assets-src/images/
 ```
+
+### Imágenes de diseño
+
+Los originales pesados (letras, estrella animal print, estrella grande) están en `assets-src/images/`
+y no se publican. `npm run optimize-images` los convierte a WebP en `public/images/` con el tamaño
+justo para cómo se muestran (por ejemplo, las letras ya estiradas al doble de su tamaño en pantalla):
+la home pasó de ~3,9 MB a ~0,4 MB de imágenes. Hay que correrlo solo si se reemplaza un original.
+Las imágenes de los proyectos no pasan por acá: Astro las optimiza en el build.
 
 ### Variables de entorno
 
@@ -63,9 +72,12 @@ src/
     └── global.css                 # Tokens (colores, tipografías) y estilos base
 supabase/
 └── projects.sql                   # Tabla, reglas de acceso y contenido inicial
+assets-src/images/                 # Originales de diseño (no se publican)
+scripts/
+└── optimize-images.mjs            # Convierte los originales a WebP optimizados
 public/
 ├── fonts/                         # Dunbar Low, Tango Sans, Tempting
-└── images/                        # Letras y estrella animal print, íconos
+└── images/                        # Imágenes optimizadas (WebP) e íconos
 ```
 
 ## Componentes e interacciones

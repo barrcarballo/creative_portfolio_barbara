@@ -23,7 +23,14 @@ const { images, name, alts = [], sizes, eager = false, class: className } = Astr
 ---
 
 <span class:list={['star-art', className]} data-star-art>
-  <img class="star-art__ring" src="/images/star-leopard.png" alt="" draggable="false" />
+  <img
+    class="star-art__ring"
+    src="/images/star-leopard-sm.webp"
+    srcset="/images/star-leopard-sm.webp 480w, /images/star-leopard.webp 1024w"
+    sizes={sizes}
+    alt=""
+    draggable="false"
+  />
   <span class="star-art__picture">
     {
       images.length > 0 ? (
@@ -74,7 +81,7 @@ const { images, name, alts = [], sizes, eager = false, class: className } = Astr
     position: absolute;
     inset: 9%;
     overflow: hidden;
-    mask: url('/images/star-leopard.png') center / contain no-repeat;
+    mask: url('/images/star-leopard-sm.webp') center / contain no-repeat;
     background: var(--color-cream);
   }
 

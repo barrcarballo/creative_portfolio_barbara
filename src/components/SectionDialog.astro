@@ -48,16 +48,16 @@ const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
   <div class="section-star" data-section-star>
     <!-- Rotating layer: everything shaped like the star spins together. -->
     <div class="section-star__body" data-section-star-body>
-      <img class="section-star__frame" src="/images/section-star-frame.png" alt="" loading="lazy" />
+      <img class="section-star__frame" src="/images/section-star-frame.webp" alt="" loading="lazy" />
       <img
         class="section-star__leopard"
-        src="/images/star-leopard.png"
+        src="/images/star-leopard.webp"
         alt=""
         data-section-star-leopard
       />
       <img
         class="section-star__fill"
-        src="/images/section-star-fill.svg"
+        src="/images/section-star-fill.webp"
         width="1056"
         height="965"
         alt=""
@@ -546,7 +546,7 @@ const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
 
     // Warm the cache for the heavy star artwork without delaying first paint.
     const preload = () =>
-      ['/images/section-star-fill.svg', '/images/section-star-frame.png'].forEach((src) => {
+      ['/images/section-star-fill.webp', '/images/section-star-frame.webp'].forEach((src) => {
         new Image().src = src;
       });
     if ('requestIdleCallback' in window) requestIdleCallback(preload, { timeout: 4000 });
