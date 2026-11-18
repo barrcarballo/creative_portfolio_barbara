@@ -1,0 +1,191 @@
+---
+/**
+ * Night layer of the home scroll scene: as the visitor scrolls, the day fades
+ * into night, small twinkles appear and a closing message invites them to
+ * the visitor guestbook.
+ *
+ * Twinkles are placed where real visitors left their stars (Supabase, via
+ * lib/visitorStars), so the home sky mirrors the guestbook sky. The data is
+ * decorative here: if it can't load, decorative twinkles and a generic
+ * message are shown instead — no error state is needed.
+ *
+ * Position, opacity and parallax speed come from the `--p` progress variable
+ * set on the surrounding `[data-scene]` (see pages/index.astro).
+ */
+---
+
+<div class="night-sky" data-night-sky>
+  <div class="night-sky__twinkles" aria-hidden="true" data-twinkles></div>
+
+  <div class="night-sky__finale" data-night-finale inert>
+    <p class="night-sky__eyebrow">Cuando cae la noche…</p>
+    <p class="night-sky__title" data-night-title>las visitas dejan su estrella en el cielo</p>
+    <a class="night-sky__cta" href="#contact/estrellas">Dejá la tuya</a>
+  </div>
+</div>
+
+<script>
+  import { fetchStars } from '../lib/visitorStars';
+
+  const root = document.querySelector<HTMLElement>('[data-night-sky]');
+  const scene = root?.closest<HTMLElement>('[data-scene]');
+
+  if (root && scene) {
+    const twinkles = root.querySelector<HTMLElement>('[data-twinkles]')!;
+    const title = root.querySelector<HTMLElement>('[data-night-title]')!;
+    const finale = root.querySelector<HTMLElement>('[data-night-finale]')!;
+
+    const addTwinkle = (x: number, y: number, seed: number, real: boolean) => {
+      const dot = document.createElement('span');
+      dot.className = `night-sky__twinkle${real ? ' is-visitor' : ''}`;
+      dot.style.left = `${x}%`;
+      // Keep twinkles in the upper part of the sky, above the closing message.
+      dot.style.top = `${4 + y * 0.62}%`;
+      dot.style.setProperty('--delay', `${(seed * 397) % 3000}ms`);
+      dot.style.setProperty('--size', `${real ? 4 + (seed % 3) : 2 + (seed % 2)}px`);
+      twinkles.append(dot);
+    };
+
+    // A few decorative twinkles so the night is never empty.
+    for (let i = 1; i <= 28; i++) addTwinkle((i * 37) % 100, (i * 53) % 100, i, false);
+
+    let requested = false;
+    const loadVisitors = async () => {
+      if (requested) return;
+      requested = true;
+      try {
+        const stars = await fetchStars();
+        stars.forEach((star) => addTwinkle(star.x, star.y, star.id, true));
+        if (stars.length > 0) {
+          title.textContent =
+            stars.length === 1
+              ? '1 estrella brilla en el cielo de visitas'
+              : `${stars.length} estrellas brillan en el cielo de visitas`;
+        }
+      } catch {
+        // Decorative data: keep the generic message and decorative twinkles.
+      }
+    };
+
+    // Only fetch once the visitor actually starts scrolling into the night.
+    window.addEventListener('scene:progress', (event) => {
+      const { progress } = (event as CustomEvent<{ progress: number }>).detail;
+      if (progress > 0.1) void loadVisitors();
+      // Hidden content mustn't be reachable by keyboard.
+      finale.inert = progress < 0.6;
+    });
+  }
+</script>
+
+<style>
+  .night-sky {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    /* Night background fades in from ~15% of the scroll. */
+    opacity: clamp(0, calc((var(--p, 0) - 0.15) * 1.6), 1);
+    background:
+      radial-gradient(ellipse at 30% 15%, #4a2a10 0%, transparent 55%),
+      radial-gradient(ellipse at 80% 85%, #3b1d06 0%, transparent 50%),
+      #1a0d02;
+  }
+
+  /* Far layer: barely moves, so it reads as distant. */
+  .night-sky__twinkles {
+    position: absolute;
+    inset: 0;
+    translate: 0 calc((1 - var(--p, 0)) * 10svh);
+  }
+
+  .night-sky__twinkles :global(.night-sky__twinkle) {
+    position: absolute;
+    width: var(--size, 3px);
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: #fff3d1;
+    box-shadow: 0 0 6px 1px rgb(255 214 140 / 0.8);
+    animation: night-twinkle 3.2s ease-in-out var(--delay, 0ms) infinite;
+  }
+
+  .night-sky__twinkles :global(.night-sky__twinkle.is-visitor) {
+    background: #ffd27a;
+    box-shadow: 0 0 10px 2px rgb(255 196 92 / 0.9);
+  }
+
+  @keyframes night-twinkle {
+    50% {
+      opacity: 0.35;
+      scale: 0.7;
+    }
+  }
+
+  /* Near layer: rises faster than the scroll and appears at the end. */
+  .night-sky__finale {
+    position: absolute;
+    right: var(--page-gutter);
+    bottom: clamp(48px, 12svh, 140px);
+    left: var(--page-gutter);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    color: var(--color-cream);
+    text-align: center;
+    opacity: clamp(0, calc((var(--p, 0) - 0.65) * 3.5), 1);
+    translate: 0 calc((1 - var(--p, 0)) * 22svh);
+    pointer-events: auto;
+  }
+
+  .night-sky__eyebrow {
+    margin: 0;
+    font-family: var(--font-ui);
+    font-size: clamp(15px, 1.2vw, 20px);
+    letter-spacing: 0.04em;
+    opacity: 0.8;
+  }
+
+  .night-sky__title {
+    max-width: 22ch;
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: clamp(26px, 3.6vw, 56px);
+    font-style: italic;
+    line-height: 1.1;
+    text-wrap: balance;
+  }
+
+  .night-sky__cta {
+    margin-top: 8px;
+    padding: 12px 28px;
+    border-radius: var(--radius-pill);
+    background: var(--color-cream);
+    color: var(--color-brown);
+    font-family: var(--font-ui);
+    font-size: 18px;
+    text-decoration: none;
+    box-shadow: 0 0 24px rgb(255 196 92 / 0.35);
+    transition: translate 0.2s ease;
+  }
+
+  .night-sky__cta:hover {
+    translate: 0 -2px;
+  }
+
+  .night-sky__cta:focus-visible {
+    outline: 2px solid var(--color-cream);
+    outline-offset: 3px;
+  }
+
+  /* Reduced motion: keep the day → night crossfade, drop the movement. */
+  @media (prefers-reduced-motion: reduce) {
+    .night-sky__twinkles,
+    .night-sky__finale {
+      translate: none;
+    }
+
+    .night-sky__twinkles :global(.night-sky__twinkle) {
+      animation: none;
+    }
+  }
+</style>

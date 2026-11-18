@@ -5,6 +5,7 @@ import FurName from '../components/FurName.astro';
 import HangingStars from '../components/HangingStars.astro';
 import Typewriter from '../components/Typewriter.astro';
 import SectionDialog from '../components/SectionDialog.astro';
+import NightSky from '../components/NightSky.astro';
 import { sections } from '../data/sections';
 
 const roles = ['diseñadora multimedial', 'creativa', 'diseñadora UX/UI', 'fan de los detalles'];
@@ -16,8 +17,17 @@ const starLinks = sections.map(({ id, label }) => ({ label, href: `#${id}` }));
   <SiteHeader />
 
   <main>
+    <!--
+      Scroll scene: the scene is taller than the screen and the hero sticks to the
+      top while scrolling through it. Scroll progress (0 → 1) is exposed as `--p`
+      and each layer moves at its own speed (parallax): text rises and fades, the
+      ropes wind up and day turns into night.
+    -->
+    <div class="scene" data-scene>
     <section class="hero" id="top" data-rope-anchor>
-      <div class="hero__title" data-fur-zone>
+      <NightSky />
+
+      <div class="hero__title" data-fur-zone data-scene-text>
         <h1 class="hero__heading">
           <span class="hero__greeting">
             <em>Hola!</em> <span class="hero__soy">soy</span>
@@ -27,7 +37,7 @@ const starLinks = sections.map(({ id, label }) => ({ label, href: `#${id}` }));
         <Typewriter class="hero__role" phrases={roles} />
       </div>
 
-      <div class="hero__intro">
+      <div class="hero__intro" data-scene-text>
         <p>Diseño experiencias digitales con personalidad: simples, intuitivas e imposibles de confundir.</p>
         <p class="hero__cta">
           Mirá mis <a href="#work">trabajos</a>, <a href="#about">conoceme</a> o <a href="#contact">hablemos</a>.
@@ -36,20 +46,74 @@ const starLinks = sections.map(({ id, label }) => ({ label, href: `#${id}` }));
 
       <HangingStars items={starLinks} label="Portfolio sections" />
     </section>
+    </div>
   </main>
 
   <SectionDialog sections={sections} />
 </BaseLayout>
 
+<script>
+  // Scroll scene: publish progress through the scene as `--p` (for CSS) and a
+  // `scene:progress` event (for components with their own JS, like the ropes).
+  const scene = document.querySelector<HTMLElement>('[data-scene]');
+
+  if (scene) {
+    const texts = [...scene.querySelectorAll<HTMLElement>('[data-scene-text]')];
+    let frame = 0;
+    let lastProgress = -1;
+    let lastScrollY = window.scrollY;
+    let lastTime = performance.now();
+
+    const update = () => {
+      frame = 0;
+      const rect = scene.getBoundingClientRect();
+      const distance = scene.offsetHeight - window.innerHeight;
+      const progress = distance > 0 ? Math.min(1, Math.max(0, -rect.top / distance)) : 0;
+
+      // Scroll speed (px/s) lets the ropes react with a bit of inertia.
+      const now = performance.now();
+      const velocity = ((window.scrollY - lastScrollY) / Math.max(now - lastTime, 1)) * 1000;
+      lastScrollY = window.scrollY;
+      lastTime = now;
+
+      if (Math.abs(progress - lastProgress) < 0.0005 && Math.abs(velocity) < 1) return;
+      lastProgress = progress;
+
+      scene.style.setProperty('--p', progress.toFixed(4));
+      scene.classList.toggle('is-night', progress > 0.6);
+      // Faded-out text shouldn't be reachable by keyboard or pointer.
+      texts.forEach((el) => (el.inert = progress > 0.6));
+
+      window.dispatchEvent(new CustomEvent('scene:progress', { detail: { progress, velocity } }));
+    };
+
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+
+    window.addEventListener('scroll', schedule, { passive: true });
+    window.addEventListener('resize', schedule);
+    schedule();
+  }
+</script>
+
 <style>
+  /* The scene is taller than the screen only when JS can drive it. */
+  :global(.js) .scene {
+    height: 260svh;
+  }
+
   .hero {
+    position: sticky;
+    top: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: clamp(32px, 4vw, 76px);
+    height: 100svh;
     min-height: 100svh;
     padding: clamp(110px, 7.3vw, 140px) var(--page-gutter) clamp(40px, 3.4vw, 64px);
-    overflow-x: clip;
+    overflow: clip;
   }
 
   /* Text sits above the ropes, which hang from the top of the hero. */
@@ -57,6 +121,29 @@ const starLinks = sections.map(({ id, label }) => ({ label, href: `#${id}` }));
   .hero__intro {
     position: relative;
     z-index: 20;
+  }
+
+  /* Parallax: the intro rises faster than the title, and both fade out. */
+  .hero__title {
+    translate: 0 calc(var(--p, 0) * -28svh);
+    opacity: calc(1 - var(--p, 0) * 1.8);
+  }
+
+  .hero__intro {
+    translate: 0 calc(var(--p, 0) * -48svh);
+    opacity: calc(1 - var(--p, 0) * 2.6);
+  }
+
+  /* At night the ropes are light, so they still read on the dark sky. */
+  .scene :global(.stars__rope) {
+    filter: brightness(calc(1 + var(--p, 0) * 1.6));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hero__title,
+    .hero__intro {
+      translate: none;
+    }
   }
 
   .hero__title {

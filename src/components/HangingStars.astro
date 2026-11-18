@@ -127,16 +127,31 @@ const sparkles = [
       return star.slot.getBoundingClientRect().top - anchorTop;
     };
 
+    // Scroll scene (pages/index.astro): ropes wind up as the page scrolls, each
+    // star at its own speed — that difference is the parallax.
+    const LIFT_FACTORS = [1, 0.84, 0.93, 0.78];
+    const LIFT_TARGET = 0.14; // where the highest star ends, as a fraction of the viewport
+    let sceneProgress = 0;
+
+    /** Upward offset (px, negative) for a star at the current scroll progress. */
+    const liftFor = (star: Star, index: number) => {
+      if (reducedMotion || sceneProgress === 0) return 0;
+      const highest = Math.min(...stars.map(measureDrop));
+      const travel = Math.max(0, highest - window.innerHeight * LIFT_TARGET);
+      return -sceneProgress * travel * (LIFT_FACTORS[index % LIFT_FACTORS.length] ?? 1);
+    };
+
     const paint = (star: Star) => {
       const drop = measureDrop(star);
       const height = star.slot.offsetHeight;
       const ropeLength = drop + height * ROPE_OVERLAP;
       const angle = Math.atan2(star.sway, ropeLength) * (180 / Math.PI);
+      const offset = star.y + liftFor(star, stars.indexOf(star));
 
       star.swing.style.transformOrigin = `50% ${-drop}px`;
       star.swing.style.transform = `rotate(${angle.toFixed(3)}deg)`;
-      star.body.style.transform = `translateY(${star.y.toFixed(2)}px)`;
-      star.rope.style.height = `${Math.max(0, ropeLength + star.y)}px`;
+      star.body.style.transform = `translateY(${offset.toFixed(2)}px)`;
+      star.rope.style.height = `${Math.max(0, ropeLength + offset)}px`;
     };
 
     let frame = 0;
@@ -241,6 +256,17 @@ const sparkles = [
 
     // Layout changes (resize, late font loading) alter rope lengths: repaint.
     const repaint = () => stars.forEach((star) => star.state !== 'waiting' && paint(star));
+
+    window.addEventListener('scene:progress', (event) => {
+      const { progress, velocity } = (event as CustomEvent<{ progress: number; velocity: number }>)
+        .detail;
+      sceneProgress = progress;
+      repaint();
+      // Fast scrolling gives the stars a small sideways swing, alternating direction.
+      if (Math.abs(velocity) > 300) {
+        stars.forEach((star, index) => push(star, (index % 2 ? -1 : 1) * Math.sign(velocity) * 12));
+      }
+    });
     new ResizeObserver(repaint).observe(document.documentElement);
     document.fonts?.ready.then(repaint);
   }
