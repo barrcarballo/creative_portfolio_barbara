@@ -1,6 +1,46 @@
 # Barbara — Creative portfolio
 
-Portfolio personal de diseño multimedial desarrollado con [Astro](https://astro.build).
+**Sitio:** https://barbaracarballo.vercel.app · **Repositorio:** https://github.com/barrcarballo/creative_portfolio_barbara
+
+## Sobre el proyecto
+
+Portfolio personal de Barbara Carballo, diseñadora multimedial con perfil UX/UI y desarrollo front y back.
+
+**La propuesta:** un portfolio que se recorre como un objeto, no como un documento. La identidad
+gira alrededor de una textura de **animal print con pelaje**: el nombre es de peluche y reacciona al
+cursor, las secciones son **estrellas colgadas de sogas** que caen al cargar la página y se balancean
+al pasar el mouse, y al elegir una, la estrella vuela girando hasta el centro y se abre para mostrar
+su contenido. La idea es que la forma de navegar ya cuente cómo diseña: con personalidad, pero sin
+perder claridad.
+
+**Público:** potenciales clientes, estudios y equipos que buscan una diseñadora multimedial
+(identidad, UX/UI, edición de video) que además pueda llevar sus diseños a código. El sitio prioriza
+ver los trabajos rápido (en dos clicks se llega a cualquier proyecto) y contactar sin fricción
+(WhatsApp, email e Instagram a un toque).
+
+**Secciones:** Sobre mí · Trabajos (5 proyectos con galería, pantallas y links) · Servicios · Contacto.
+
+## Tecnologías y decisiones principales
+
+| Tecnología | Para qué | Por qué |
+| --- | --- | --- |
+| [Astro](https://astro.build) 7 | Sitio estático, componentes `.astro` | Genera HTML estático (carga rápida, buen SEO) y solo envía JavaScript donde hay interacción. |
+| TypeScript + JavaScript sin framework | Interacciones (resortes, péndulos, rutas, carga de datos) | Las interacciones son pocas y muy específicas; un framework de UI agregaría peso sin resolver nada que el DOM no resuelva. |
+| CSS propio con estilos *scoped* de Astro | Estilos | Cada componente trae sus estilos; tokens de color y tipografía en `global.css`. Medidas fluidas con `clamp()` y unidades de contenedor (`cqw`). |
+| Web Animations API | Vuelo de estrellas, giros, transiciones | Animaciones encadenables con `await` y canceladas al cerrar, sin librerías. |
+| `<dialog>` nativo | Visor de secciones, proyectos e imágenes | Trae gratis foco atrapado, fondo inerte, cierre con `Escape` y devolución del foco. |
+| Rutas por hash (`#work/loopies`) | Navegación entre secciones y proyectos | Cada vista tiene URL propia (links directos, botón atrás) sin necesidad de servidor. |
+| [Supabase](https://supabase.com) (API REST con `fetch`) | Contenido de los proyectos | Funciona como CMS: el contenido se edita sin deploy. Sin SDK, para que cada pedido sea explícito. Ver [Fuente de datos externa](#fuente-de-datos-externa). |
+| `astro:assets` + [sharp](https://sharp.pixelplumbing.com) | Imágenes | Las imágenes de proyectos se optimizan en el build (WebP, varios tamaños); las de diseño, con un script propio. |
+| [Vercel](https://vercel.com) | Deploy | Deploy automático desde `main` y previews por branch. |
+
+**Otras decisiones:**
+- **Mejora progresiva:** sin JavaScript el contenido igual se ve (las estrellas aparecen en su lugar,
+  el título muestra la primera frase). Las animaciones son una capa encima, no un requisito.
+- **El contenido de los proyectos en una base de datos y las imágenes en el repo:** así se edita
+  texto sin deploy, pero las imágenes siguen pasando por la optimización de Astro.
+- **Un solo origen de datos por tema:** las secciones y los canales de contacto en `src/data/sections.ts`
+  (el botón "Hablemos" y Contacto usan el mismo WhatsApp); los proyectos en Supabase.
 
 ## Requisitos
 
@@ -96,6 +136,13 @@ Al pasar el cursor, las letras se alejan del puntero, se inclinan en la direcci�
 del movimiento (como si se "peinara" el pelaje) y vuelven a su lugar con un rebote suave.
 La animación solo corre mientras hay movimiento y se desactiva con `prefers-reduced-motion`.
 
+### `Typewriter`
+
+La línea debajo del nombre se escribe sola y va rotando entre "diseñadora multimedial", "creativa",
+"diseñadora UX/UI" y "fan de los detalles". El tamaño de la línea se calcula para que entre la frase
+más larga, así el cambio de frase nunca mueve el resto de la página. Los lectores de pantalla reciben
+la lista completa una sola vez (no cada letra); con movimiento reducido, las frases cambian sin tipeo.
+
 ### `HangingStars`
 
 Navegación principal hacia las secciones del portfolio.
@@ -136,6 +183,11 @@ Se ordenan por nombre de archivo (`1-logo.svg`, `2-app.png`) y Astro las optimiz
 Como las imágenes se generan en el build pero la lista de proyectos llega en el navegador, cada
 juego de imágenes se pre-renderiza dentro de un `<template>` y se clona cuando llega su proyecto.
 Un proyecto sin carpeta de imágenes muestra su inicial como portada.
+
+### `StarArt`
+
+Recorta cualquier imagen con la silueta de la estrella (usando la propia imagen de la estrella como
+máscara) y le pone el borde de pelaje. Lo usan las estrellitas de la constelación y la galería de la ficha.
 
 ### `ServiceGrid` y `ContactLinks`
 
@@ -235,11 +287,106 @@ no configurado, proyecto seleccionado (ficha abierta) e imagen ampliada.
 deploy) y una fila en la tabla `projects` con el mismo `id`. **Editar textos o links:** solo desde
 Supabase, sin deploy.
 
+## Responsive
+
+El diseño se adapta, no solo se achica: en pantallas chicas cambia la disposición de cada parte.
+
+- **Tipografía y espacios fluidos** con `clamp()`: el título va de 26 a 80 px según el ancho.
+  Dentro de la estrella grande, los tamaños usan unidades de contenedor (`cqw`), así el contenido
+  escala con la estrella y no con la ventana.
+- **Alturas de pantalla móviles** con `svh` / `dvh`, para que la barra del navegador del celular no
+  tape contenido.
+- **Imágenes responsivas:** las de proyectos se sirven en varios tamaños (`srcset` / `sizes`) y el
+  navegador elige la adecuada; el borde de pelaje tiene una versión chica y una grande.
+
+| Ancho | Cambios |
+| --- | --- |
+| < 1100 px | El navbar reduce la separación entre links |
+| < 768 px | El navbar se colapsa en un menú desplegable (botón "menú" / "cerrar") |
+| < 720 px | Estrellas en 2 × 2; la estrella grande se agranda y desborda a los costados para que su centro siga siendo legible; Servicios muestra solo ícono y título; la constelación de proyectos usa estrellitas más grandes |
+| < 900 px | La ficha de proyecto pasa de dos columnas (galería + texto) a una, con scroll |
+
+Las capturas de página completa se muestran recortadas en la ficha y se recorren con scroll al
+ampliarlas, en lugar de achicarse hasta ser ilegibles. Revisado en 390, 1280, 1366, 1440 y 1920 px de ancho.
+
+## Accesibilidad
+
+- **Estructura semántica:** `lang="es"`, `header`, `nav` con etiqueta ("Principal", "Secciones del
+  portfolio"), `main`, jerarquía de títulos; cada vista del visor anuncia su título (`aria-labelledby`).
+- **Teclado:** todo lo interactivo es un link o un botón real, con foco visible. `Escape` cierra, en
+  orden, la imagen ampliada, el proyecto, la sección y el menú mobile. El `<dialog>` atrapa el foco,
+  lo lleva al título al abrir un proyecto y lo devuelve a la estrella al cerrar. El contenido oculto
+  se marca como `inert` para que el teclado no llegue a lo que no se ve.
+- **Movimiento reducido:** con `prefers-reduced-motion` no hay caída de estrellas, balanceo, giros,
+  tipeo ni destellos; las transiciones pasan a ser fundidos cortos o cambios directos.
+- **Textos alternativos:** las imágenes de proyectos tienen descripciones propias (cargadas desde
+  Supabase); las decorativas usan `alt=""`. Los links externos avisan "se abre en una pestaña nueva"
+  a lectores de pantalla; los íconos llevan texto oculto con su nombre.
+- **Estados anunciados:** `aria-busy` mientras cargan los proyectos, mensajes de error y vacío con
+  `role="status"`, miniaturas de galería con `aria-pressed`.
+- **Contraste:** marrón `#4a2500` sobre crema `#fbebda` y crema sobre marrón en botones y navbar.
+
+## Limitaciones conocidas y posibles mejoras
+
+**Limitaciones**
+
+- **Plan gratuito de Supabase:** los proyectos inactivos se pausan después de una semana sin uso. Si
+  pasa, quien ya visitó el sitio sigue viendo los trabajos desde la copia guardada, pero una visita
+  nueva ve el mensaje de error hasta que se reactive el proyecto desde el panel.
+- **Agregar un proyecto requiere deploy:** el texto se edita en Supabase, pero las imágenes viven en el
+  repo para que Astro las optimice.
+- **Las secciones dependen de JavaScript:** el contenido de Sobre mí, Servicios y Contacto está en el
+  HTML, pero se muestra dentro del visor animado. Los proyectos se cargan en el navegador, así que
+  los buscadores no los indexan.
+- **Firefox** todavía no soporta `text-box`: el texto "menú" del navbar mobile queda unos píxeles más
+  abajo que en Chrome y Safari.
+- **Logo de Studio3:** el SVG tiene el texto sin convertir a curvas y depende de Avenir Next; en
+  Windows y Android se ve con otra tipografía.
+- **Datos de contacto:** no se muestran en pantalla, pero el email y el número están en los links
+  (`mailto:` y `wa.me`), así que quien lea el código fuente los puede ver.
+- **Accesibilidad:** revisada con teclado y en el navegador, pero no probada a fondo con lectores de
+  pantalla (VoiceOver, NVDA).
+- **Sin tests automatizados**, y el sitio está solo en español.
+
+**Posibles mejoras**
+
+- Guardar las imágenes de los proyectos en **Supabase Storage** para agregar trabajos sin deploy.
+- Evitar la pausa del plan gratuito con un pedido programado (cron) o un plan pago.
+- Generar los proyectos en el build y revalidar periódicamente, para que sean indexables sin perder
+  la edición sin deploy.
+- Tests end-to-end (por ejemplo con Playwright) para la navegación y los estados de la API.
+- Versión en inglés.
+- La branch `feat/parallax-scroll` tiene una prueba de escena con parallax ("cae la noche") que quedó
+  sin integrar.
+
 ## Deploy
 
-https://barbaracarballo.vercel.app/
+https://barbaracarballo.vercel.app/ (Vercel, deploy automático desde `main`).
 
-## Créditos
+## Créditos y licencias
 
-- Tipografía **Tempting**: licencia de uso personal.
-- Diseño original en Figma.
+**Diseño y contenido:** diseño original de Barbara Carballo en Figma. Las imágenes de los proyectos,
+las letras y las estrellas de animal print son material propio.
+
+**Tipografías**
+
+| Tipografía | Uso | Licencia |
+| --- | --- | --- |
+| [Jost](https://fonts.google.com/specimen/Jost) | Textos | SIL Open Font License, vía Google Fonts |
+| Georgia | Títulos | Tipografía del sistema (no se distribuye con el sitio) |
+| Dunbar Low | Navegación, botones | Comercial |
+| Tango Sans | "soy" del título | Comercial |
+| Tempting | Iniciales decorativas | Comercial (versión de uso personal) |
+
+> **Nota sobre tipografías:** Dunbar Low, Tango Sans y Tempting son tipografías comerciales usadas
+> en este proyecto **con fines académicos**, sin licencia de uso web. Antes de usar el sitio
+> profesionalmente hay que adquirir sus licencias o reemplazarlas por alternativas libres (OFL);
+> el cambio está centralizado en los tokens de `src/styles/global.css`.
+
+**Software**
+
+- [Astro](https://astro.build) — MIT
+- [sharp](https://sharp.pixelplumbing.com) — Apache 2.0
+- [Supabase](https://supabase.com) — servicio de base de datos y API (plan gratuito)
+- Íconos de servicios, contacto, lupa y cierre: SVG dibujados para el sitio.
+- Flechas (`arrow-*.svg`): [Phosphor Icons](https://phosphoricons.com) — MIT.
