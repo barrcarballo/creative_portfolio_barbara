@@ -21,6 +21,7 @@ import type { Section } from '../data/sections';
 import ProjectConstellation from './ProjectConstellation.astro';
 import ProjectDetail from './ProjectDetail.astro';
 import VisitorStars from './VisitorStars.astro';
+import ServiceGrid from './ServiceGrid.astro';
 
 interface Props {
   sections: Section[];
@@ -80,6 +81,8 @@ const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
               </h2>
               {section.projects ? (
                 <ProjectConstellation sectionId={section.id} projects={section.projects} />
+              ) : section.services ? (
+                <ServiceGrid services={section.services} />
               ) : (
                 <p class="section-star__text" set:html={section.body} />
               )}
@@ -760,7 +763,8 @@ const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
   }
 
   /* Sections with a project browser need the vertical space. */
-  .section-star__article:has([data-project-mini]) {
+  .section-star__article:has([data-project-mini]),
+  .section-star__article:has([data-services]) {
     gap: 2.6cqw;
   }
 

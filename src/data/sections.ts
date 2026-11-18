@@ -5,6 +5,14 @@
  */
 import { projects, type Project } from './projects';
 
+export type ServiceIcon = 'devices' | 'pen' | 'video' | 'code';
+
+export interface Service {
+  title: string;
+  description: string;
+  icon: ServiceIcon;
+}
+
 export interface Section {
   id: string;
   /** Label shown on the hanging star. */
@@ -17,6 +25,8 @@ export interface Section {
   body?: string;
   /** When present, the section shows a project browser instead of body copy. */
   projects?: Project[];
+  /** When present, the section shows a grid of services instead of body copy. */
+  services?: Service[];
   /** When true, the section hosts the visitor guestbook at `#<id>/estrellas`. */
   guestbook?: boolean;
   /** Optional call-to-action button under the body. `href` may be an in-page route. */
@@ -38,13 +48,33 @@ export const sections: Section[] = [
     accent: 'trabajos',
     projects,
   },
-  // TODO: replace placeholder copy for the sections below once it's designed.
   {
     id: 'services',
     label: 'Services',
     title: 'Lo que',
     accent: 'hago',
-    body: 'Contenido en preparación.',
+    services: [
+      {
+        title: 'Diseño web y mobile',
+        description: 'Interfaces claras y con personalidad, del wireframe al prototipo.',
+        icon: 'devices',
+      },
+      {
+        title: 'Diseño gráfico',
+        description: 'Identidades, branding y piezas que no se olvidan.',
+        icon: 'pen',
+      },
+      {
+        title: 'Edición de video',
+        description: 'Piezas audiovisuales con ritmo, para redes y marcas.',
+        icon: 'video',
+      },
+      {
+        title: 'Desarrollo front y back',
+        description: 'Llevo el diseño a código: sitios y apps que funcionan de verdad.',
+        icon: 'code',
+      },
+    ],
   },
   {
     id: 'contact',
