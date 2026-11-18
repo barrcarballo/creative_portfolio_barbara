@@ -49,6 +49,14 @@ export function getProjectImages(projectId: string): ProjectImage[] {
   }));
 }
 
+/** Ids (folder names) of every project that has at least one local image. */
+export function getLocalProjectIds(): string[] {
+  const ids = Object.keys({ ...galleryModules, ...cardModules }).map(
+    (path) => path.split('/projects/')[1]!.split('/')[0]!,
+  );
+  return [...new Set(ids)].sort();
+}
+
 export function getProjectCardImages(projectId: string): ImageMetadata[] {
   return collect(cardModules, projectId).map(({ image }) => image);
 }

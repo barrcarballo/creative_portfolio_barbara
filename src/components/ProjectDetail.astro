@@ -2,133 +2,113 @@
 /**
  * Project view layer inside SectionDialog. One panel per project: a large
  * star-shaped gallery on one side and a cream card with the project's name,
- * roles and description on the other (stacked on small screens).
- * SectionDialog decides which panel is visible and animates the transition;
- * this component only handles the gallery thumbnails.
+ * roles, description, screens and links on the other (stacked on small screens).
+ *
+ * Content comes from Supabase at runtime (lib/projectsStore); images are
+ * optimised by Astro at build time. So the panel structure and every local
+ * image set are pre-rendered inside <template>s, and panels are assembled in
+ * the browser when the projects arrive. Visitor-facing text is always set with
+ * `textContent`, never as HTML.
+ *
+ * SectionDialog decides which panel is visible and animates the transitions;
+ * this component builds the panels and handles thumbnails and the lightbox.
  */
 import { Image } from 'astro:assets';
 import StarArt from './StarArt.astro';
-import type { Project } from '../data/projects';
-import { getProjectCardImages, getProjectImages } from '../lib/projectImages';
+import { getLocalProjectIds, getProjectCardImages, getProjectImages } from '../lib/projectImages';
 
-interface Props {
-  projects: Project[];
-}
-
-const { projects } = Astro.props;
-const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
+const projectIds = getLocalProjectIds();
 ---
 
 <div class="project-detail" data-project-detail hidden>
+  <div data-project-panels></div>
+
+  <!-- Panel skeleton, filled in per project -->
+  <template data-panel-template>
+    <section class="project" data-project-panel hidden>
+      <div class="project__media">
+        <div class="project__art" data-project-art>
+          <div class="project__art-spin" data-project-art-spin data-gallery-slot></div>
+        </div>
+        <div class="project__thumbs" role="group" aria-label="Imágenes del proyecto" data-thumbs hidden>
+          <button class="project__thumb" type="button" aria-pressed="false" data-project-thumb></button>
+        </div>
+      </div>
+
+      <div class="project__card" data-project-card>
+        <h2 class="project__name" tabindex="-1" data-name>
+          <span class="project__initial" data-name-initial></span><span data-name-rest></span>
+        </h2>
+        <ul class="project__roles" aria-label="Qué hice" data-roles>
+          <li class="project__role"></li>
+        </ul>
+        <p class="project__description" data-description></p>
+        <div data-card-slot></div>
+        <div class="project__links" data-links>
+          <a class="project__link" target="_blank" rel="noopener noreferrer" data-case-study>
+            Ver desarrollo completo
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7M8 7h9v9"></path></svg>
+            <span class="visually-hidden">(se abre en una pestaña nueva)</span>
+          </a>
+          <a class="project__link project__link--outline" target="_blank" rel="noopener noreferrer" data-prototype>
+            Ver prototipo
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7M8 7h9v9"></path></svg>
+            <span class="visually-hidden">(se abre en una pestaña nueva)</span>
+          </a>
+        </div>
+      </div>
+    </section>
+  </template>
+
+  <!-- Build-time optimised images, keyed by project id -->
   {
-    projects.map((project) => {
-      const images = getProjectImages(project.id);
-      const cardImages = getProjectCardImages(project.id);
-      const [initial, rest] = splitInitial(project.name);
+    projectIds.map((id) => {
+      const images = getProjectImages(id);
       return (
-        <section
-          class="project"
-          aria-labelledby={`project-name-${project.id}`}
-          data-project-panel={project.id}
-          hidden
-        >
-          <div class="project__media">
-            <div class="project__art" data-project-art>
-              <div class="project__art-spin" data-project-art-spin>
-                <StarArt
-                  class="project__star"
-                  images={images}
-                  alts={project.imageAlts}
-                  name={project.name}
-                  sizes="(max-width: 719px) 80vw, 45vw"
-                />
-              </div>
-            </div>
-
-            {images.length > 1 && (
-              <div class="project__thumbs" role="group" aria-label="Imágenes del proyecto">
-                {images.map((_, index) => (
-                  <button
-                    class="project__thumb"
-                    type="button"
-                    aria-label={`Ver imagen ${index + 1} de ${images.length}`}
-                    aria-pressed={index === 0 ? 'true' : 'false'}
-                    data-project-thumb={index}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div class="project__card" data-project-card>
-            <h2 class="project__name" id={`project-name-${project.id}`} tabindex="-1">
-              <span class="project__initial">{initial}</span>
-              {rest}
-            </h2>
-            <ul class="project__roles" aria-label="Qué hice">
-              {project.roles.map((role) => (
-                <li class="project__role">{role}</li>
-              ))}
-            </ul>
-            <p class="project__description">{project.description}</p>
-            {cardImages.map((image, index) => {
-              // Full-page captures: show the top in the card, scroll them in the viewer.
-              const tall = image.height / image.width > 1.3;
-              return (
-              <button
-                class:list={['project__zoom', { 'project__zoom--tall': tall }]}
-                type="button"
-                aria-label={tall ? 'Ver página completa' : 'Ampliar imagen'}
-                data-zoom
-                data-tall={tall ? 'true' : undefined}
-              >
-                <Image
-                  class="project__card-image"
-                  src={image}
-                  alt={project.cardImageAlts?.[index] ?? `${project.name} — pantallas del proyecto`}
-                  widths={[560, 1120, 1680, 2400]}
-                  sizes="(max-width: 899px) 90vw, 560px"
-                  loading="lazy"
-                />
-                <span class="project__zoom-hint" aria-hidden="true">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                    <circle cx="11" cy="11" r="7" />
-                    <path d="M20 20l-3.5-3.5M11 8v6M8 11h6" />
-                  </svg>
-                </span>
-                {tall && <span class="project__zoom-label" aria-hidden="true">Ver página completa</span>}
-              </button>
-              );
-            })}
-
-            {(project.links?.caseStudy || project.links?.prototype) && (
-              <div class="project__links">
-                {project.links.caseStudy && (
-                  <a class="project__link" href={project.links.caseStudy} target="_blank" rel="noopener noreferrer">
-                    Ver desarrollo completo
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7M8 7h9v9" /></svg>
-                    <span class="visually-hidden">(se abre en una pestaña nueva)</span>
-                  </a>
-                )}
-                {project.links.prototype && (
-                  <a
-                    class="project__link project__link--outline"
-                    href={project.links.prototype}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Ver prototipo
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7M8 7h9v9" /></svg>
-                    <span class="visually-hidden">(se abre en una pestaña nueva)</span>
-                  </a>
-                )}
-              </div>
-            )}
-          </div>
-        </section>
+        <template data-gallery-for={id} data-count={images.length}>
+          <StarArt class="project__star" images={images} name={id} sizes="(max-width: 719px) 80vw, 45vw" />
+        </template>
       );
     })
   }
+  {
+    projectIds.map((id) => (
+      <template data-card-images-for={id}>
+        {getProjectCardImages(id).map((image) => {
+          // Full-page captures: show the top in the card, scroll them in the viewer.
+          const tall = image.height / image.width > 1.3;
+          return (
+            <button
+              class:list={['project__zoom', { 'project__zoom--tall': tall }]}
+              type="button"
+              aria-label={tall ? 'Ver página completa' : 'Ampliar imagen'}
+              data-zoom
+              data-tall={tall ? 'true' : undefined}
+            >
+              <Image
+                class="project__card-image"
+                src={image}
+                alt=""
+                widths={[560, 1120, 1680, 2400]}
+                sizes="(max-width: 899px) 90vw, 560px"
+                loading="lazy"
+              />
+              <span class="project__zoom-hint" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="M20 20l-3.5-3.5M11 8v6M8 11h6" />
+                </svg>
+              </span>
+              {tall && <span class="project__zoom-label" aria-hidden="true">Ver página completa</span>}
+            </button>
+          );
+        })}
+      </template>
+    ))
+  }
+  <template data-gallery-placeholder>
+    <StarArt class="project__star" images={[]} name="?" sizes="45vw" />
+  </template>
 
   <!-- Full-screen viewer for card images. A nested modal so Escape closes it first. -->
   <dialog class="lightbox" aria-label="Imagen ampliada" data-lightbox>
@@ -142,27 +122,130 @@ const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
 </div>
 
 <script>
-  // Gallery: thumbnails swap which image of the star is visible.
-  document.querySelectorAll<HTMLElement>('[data-project-panel]').forEach((panel) => {
-    const images = [...panel.querySelectorAll<HTMLElement>('[data-star-art-image]')];
-    const thumbs = [...panel.querySelectorAll<HTMLButtonElement>('[data-project-thumb]')];
+  import { onProjects, type Project } from '../lib/projectsStore';
 
-    thumbs.forEach((thumb, index) => {
-      thumb.addEventListener('click', () => {
-        images.forEach((image, i) => image.classList.toggle('is-active', i === index));
-        thumbs.forEach((t, i) => t.setAttribute('aria-pressed', String(i === index)));
+  const detail = document.querySelector<HTMLElement>('[data-project-detail]');
+
+  if (detail) {
+    const panels = detail.querySelector<HTMLElement>('[data-project-panels]')!;
+    const panelTemplate = detail.querySelector<HTMLTemplateElement>('[data-panel-template]')!;
+    const galleryPlaceholder = detail.querySelector<HTMLTemplateElement>('[data-gallery-placeholder]')!;
+    const template = (selector: string) => detail.querySelector<HTMLTemplateElement>(selector);
+    let pendingProjects: Project[] | null = null;
+
+    /** Clone one prototype child per value, replacing the prototype itself. */
+    const repeat = <T,>(container: Element, values: T[], fill: (el: HTMLElement, value: T, index: number) => void) => {
+      const prototype = container.firstElementChild as HTMLElement;
+      const clones = values.map((value, index) => {
+        const el = prototype.cloneNode(true) as HTMLElement;
+        fill(el, value, index);
+        return el;
       });
+      container.replaceChildren(...clones);
+    };
+
+    const buildPanel = (project: Project) => {
+      const fragment = panelTemplate.content.cloneNode(true) as DocumentFragment;
+      const panel = fragment.querySelector<HTMLElement>('[data-project-panel]')!;
+      const $ = <E extends HTMLElement>(selector: string) => panel.querySelector<E>(selector)!;
+
+      panel.dataset.projectPanel = project.id;
+      panel.setAttribute('aria-labelledby', `project-name-${project.id}`);
+      $('[data-name]').id = `project-name-${project.id}`;
+      $('[data-name-initial]').textContent = project.name.charAt(0);
+      $('[data-name-rest]').textContent = project.name.slice(1);
+      $('[data-description]').textContent = project.description;
+
+      const roles = $('[data-roles]');
+      if (project.roles.length) repeat(roles, project.roles, (li, role) => (li.textContent = role));
+      else roles.remove();
+
+      // Gallery: build-time images if this project has a folder, else a placeholder.
+      const galleryTemplate = template(`template[data-gallery-for="${project.id}"]`);
+      const gallery = (galleryTemplate ?? galleryPlaceholder).content.cloneNode(true) as DocumentFragment;
+      gallery.querySelectorAll('img[data-star-art-image]').forEach((img, index) => {
+        img.setAttribute('alt', project.imageAlts[index] ?? `${project.name} — imagen ${index + 1}`);
+      });
+      const initial = gallery.querySelector('.star-art__placeholder');
+      if (initial) initial.textContent = project.name.charAt(0);
+      $('[data-gallery-slot]').append(gallery);
+
+      const count = Number(galleryTemplate?.dataset.count ?? 0);
+      const thumbs = $('[data-thumbs]');
+      if (count > 1) {
+        thumbs.hidden = false;
+        repeat(thumbs, Array.from({ length: count }), (button, _, index) => {
+          button.dataset.projectThumb = String(index);
+          button.setAttribute('aria-label', `Ver imagen ${index + 1} de ${count}`);
+          button.setAttribute('aria-pressed', String(index === 0));
+        });
+      } else {
+        thumbs.remove();
+      }
+
+      // Screens under the description.
+      const cardImages = template(`template[data-card-images-for="${project.id}"]`);
+      const cardSlot = $('[data-card-slot]');
+      if (cardImages) {
+        const images = cardImages.content.cloneNode(true) as DocumentFragment;
+        images.querySelectorAll('img').forEach((img, index) => {
+          img.setAttribute('alt', project.cardImageAlts[index] ?? `${project.name} — pantallas del proyecto`);
+        });
+        cardSlot.replaceWith(images);
+      } else {
+        cardSlot.remove();
+      }
+
+      // Links: each button only when its URL exists.
+      const caseStudy = $<HTMLAnchorElement>('[data-case-study]');
+      const prototype = $<HTMLAnchorElement>('[data-prototype]');
+      if (project.caseStudyUrl) caseStudy.href = project.caseStudyUrl;
+      else caseStudy.remove();
+      if (project.prototypeUrl) prototype.href = project.prototypeUrl;
+      else prototype.remove();
+      if (!project.caseStudyUrl && !project.prototypeUrl) $('[data-links]').remove();
+
+      return fragment;
+    };
+
+    const render = (projects: Project[]) => {
+      panels.replaceChildren(...projects.map(buildPanel));
+    };
+
+    onProjects((state) => {
+      if (state.status !== 'ready') return;
+      // Don't rebuild under the visitor's eyes: wait until the project view closes.
+      if (!detail.hidden) {
+        pendingProjects = state.projects;
+        return;
+      }
+      render(state.projects);
     });
-  });
 
-  // Lightbox: reuses the clicked image's responsive sources at full-screen size.
-  const lightbox = document.querySelector<HTMLDialogElement>('[data-lightbox]');
-  const lightboxImage = lightbox?.querySelector<HTMLImageElement>('[data-lightbox-image]');
+    // Apply data that arrived while a project was open, once the view is closed.
+    new MutationObserver(() => {
+      if (detail.hidden && pendingProjects) {
+        render(pendingProjects);
+        pendingProjects = null;
+      }
+    }).observe(detail, { attributes: true, attributeFilter: ['hidden'] });
 
-  if (lightbox && lightboxImage) {
+    // Gallery thumbnails (delegated: panels are created at runtime).
+    detail.addEventListener('click', (event) => {
+      const thumb = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-project-thumb]');
+      if (!thumb) return;
+      const panel = thumb.closest<HTMLElement>('[data-project-panel]')!;
+      const index = Number(thumb.dataset.projectThumb);
+      panel.querySelectorAll('[data-star-art-image]').forEach((image, i) => image.classList.toggle('is-active', i === index));
+      panel.querySelectorAll('[data-project-thumb]').forEach((t, i) => t.setAttribute('aria-pressed', String(i === index)));
+    });
+
+    // Lightbox: reuses the clicked image's responsive sources at full-screen size.
+    const lightbox = detail.querySelector<HTMLDialogElement>('[data-lightbox]')!;
+    const lightboxImage = lightbox.querySelector<HTMLImageElement>('[data-lightbox-image]')!;
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
-    const close = async () => {
+    const closeLightbox = async () => {
       if (!lightbox.open) return;
       if (!reducedMotion.matches) {
         await lightbox.animate({ opacity: [1, 0] }, { duration: 180, easing: 'ease-in' }).finished;
@@ -170,39 +253,38 @@ const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
       lightbox.close();
     };
 
-    document.querySelectorAll<HTMLButtonElement>('[data-zoom]').forEach((button) => {
-      button.addEventListener('click', () => {
-        const source = button.querySelector('img');
-        if (!source) return;
-        lightboxImage.srcset = source.srcset;
-        lightboxImage.sizes = '95vw';
-        lightboxImage.src = source.currentSrc || source.src;
-        lightbox.classList.toggle('is-tall', button.dataset.tall === 'true');
-        lightbox.scrollTop = 0;
-        lightboxImage.alt = source.alt;
-        lightbox.showModal();
-        if (!reducedMotion.matches) {
-          lightbox.animate({ opacity: [0, 1] }, { duration: 220, easing: 'ease-out' });
-          lightboxImage.animate(
-            { scale: [0.92, 1], opacity: [0, 1] },
-            { duration: 320, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
-          );
-        }
-      });
+    detail.addEventListener('click', (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-zoom]');
+      const source = button?.querySelector('img');
+      if (!button || !source) return;
+      lightboxImage.srcset = source.srcset;
+      lightboxImage.sizes = '95vw';
+      lightboxImage.src = source.currentSrc || source.src;
+      lightbox.classList.toggle('is-tall', button.dataset.tall === 'true');
+      lightbox.scrollTop = 0;
+      lightboxImage.alt = source.alt;
+      lightbox.showModal();
+      if (!reducedMotion.matches) {
+        lightbox.animate({ opacity: [0, 1] }, { duration: 220, easing: 'ease-out' });
+        lightboxImage.animate(
+          { scale: [0.92, 1], opacity: [0, 1] },
+          { duration: 320, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
+        );
+      }
     });
 
-    lightbox.querySelector('[data-lightbox-close]')?.addEventListener('click', () => void close());
+    lightbox.querySelector('[data-lightbox-close]')!.addEventListener('click', () => void closeLightbox());
 
     // Click outside the image closes it.
     lightbox.addEventListener('click', (event) => {
-      if (event.target === lightbox) void close();
+      if (event.target === lightbox) void closeLightbox();
     });
 
     // Escape: animated close, and stop it from also closing the section dialog.
     lightbox.addEventListener('cancel', (event) => {
       event.preventDefault();
       event.stopPropagation();
-      void close();
+      void closeLightbox();
     });
   }
 </script>

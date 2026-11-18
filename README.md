@@ -18,7 +18,7 @@ npm run preview   # sirve el build localmente
 
 ### Variables de entorno
 
-El libro de visitas usa Supabase (ver [Fuente de datos externa](#fuente-de-datos-externa)).
+Los proyectos de Works se cargan desde Supabase (ver [Fuente de datos externa](#fuente-de-datos-externa)).
 Creá un archivo `.env` en la raíz con:
 
 ```bash
@@ -26,42 +26,46 @@ SUPABASE_URL=https://tu-proyecto.supabase.co
 SUPABASE_ANON_KEY=tu-clave-anon-public
 ```
 
-Las mismas variables van en el deploy (Vercel → Settings → Environment Variables, entorno
-**Production**) y requieren un nuevo deploy para aplicarse, porque se incrustan en el build.
+Las mismas variables van en el deploy (Vercel → Settings → Environment Variables, entornos
+**Production** y **Preview**) y requieren un nuevo deploy para aplicarse, porque se incrustan en el build.
 Se declaran como públicas en `astro.config.mjs` (`env.schema`, módulo `astro:env/client`):
 solo esas dos llegan al navegador.
 
-Sin estas variables el sitio funciona igual: el libro de visitas muestra el estado
-"todavía no está conectado" y deshabilita el envío.
+Sin estas variables el sitio funciona igual: Works muestra el estado "todavía no están conectados".
 
 ## Estructura
 
 ```
 src/
 ├── components/
-│   ├── SiteHeader.astro     # Navegación principal; en mobile se colapsa en un menú desplegable
-│   ├── FurName.astro        # Nombre con textura animal print que reacciona al cursor
-│   ├── HangingStars.astro   # Navegación por secciones: estrellas colgadas de sogas
-│   ├── Typewriter.astro     # Frase rotativa con efecto máquina de escribir
-│   ├── SectionDialog.astro  # Visor de secciones y proyectos (animaciones + rutas por hash)
-│   ├── ProjectConstellation.astro # Works: una estrella por proyecto
-│   ├── ProjectDetail.astro  # Vista de proyecto: galería en forma de estrella + ficha
-│   └── StarArt.astro        # Imagen recortada con la silueta de la estrella
-├── assets/projects/<id>/    # Imágenes de cada proyecto (se detectan solas)
+│   ├── SiteHeader.astro           # Navegación principal; en mobile se colapsa en un menú desplegable
+│   ├── FurName.astro              # Nombre con textura animal print que reacciona al cursor
+│   ├── Typewriter.astro           # Frase rotativa con efecto máquina de escribir
+│   ├── HangingStars.astro         # Navegación por secciones: estrellas colgadas de sogas
+│   ├── SectionDialog.astro        # Visor de secciones y proyectos (animaciones + rutas por hash)
+│   ├── ProjectConstellation.astro # Works: una estrella por proyecto (datos de la API)
+│   ├── ProjectDetail.astro        # Vista de proyecto: galería en forma de estrella + ficha
+│   ├── StarArt.astro              # Imagen recortada con la silueta de la estrella
+│   ├── ServiceGrid.astro          # Services: grilla de servicios con íconos
+│   └── ContactLinks.astro         # Contact: botones de email, WhatsApp e Instagram
+├── assets/projects/<id>/          # Imágenes de cada proyecto (se detectan solas)
 ├── data/
-│   ├── sections.ts          # Contenido de cada sección (id = hash de la URL)
-│   └── projects.ts          # Proyectos de Works
+│   └── sections.ts                # Contenido de las secciones y canales de contacto
 ├── lib/
-│   └── projectImages.ts     # Busca y ordena las imágenes de cada proyecto
+│   ├── supabase.ts                # Cliente REST de Supabase (fetch, timeout, errores tipados)
+│   ├── projectsStore.ts           # Proyectos: pedido, validación, caché y estados
+│   └── projectImages.ts           # Busca y ordena las imágenes de cada proyecto
 ├── layouts/
-│   └── BaseLayout.astro     # HTML base, fuentes y metadatos
+│   └── BaseLayout.astro           # HTML base, fuentes y metadatos
 ├── pages/
-│   └── index.astro          # Home
+│   └── index.astro                # Home
 └── styles/
-    └── global.css           # Tokens (colores, tipografías) y estilos base
+    └── global.css                 # Tokens (colores, tipografías) y estilos base
+supabase/
+└── projects.sql                   # Tabla, reglas de acceso y contenido inicial
 public/
-├── fonts/                   # Dunbar Low, Tango Sans, Tempting
-└── images/                  # Letras y estrella animal print, íconos
+├── fonts/                         # Dunbar Low, Tango Sans, Tempting
+└── images/                        # Letras y estrella animal print, íconos
 ```
 
 ## Componentes e interacciones
@@ -89,7 +93,7 @@ Al hacer click en una estrella (o en cualquier link a `#about`, `#work`, `#servi
 la estrella vuela al centro de la pantalla girando una vuelta completa mientras crece (animación FLIP);
 al llegar, su centro color crema se abre y aparece el contenido.
 
-- **Siguiente:** la estrella gira una punta (72°) mientras cambia el contenido.
+- **Siguiente:** la estrella da una vuelta completa mientras cambia el contenido.
 - **Volver / Escape / botón atrás del navegador:** la estrella vuelve girando a su soga.
 - El hash de la URL refleja la sección abierta, así que los links directos (`/#about`) funcionan.
 - Usa `<dialog>` nativo: foco atrapado, fondo inerte y el foco vuelve a la estrella al cerrar.
@@ -98,20 +102,27 @@ al llegar, su centro color crema se abre y aparece el contenido.
 
 La sección Works muestra una estrella por proyecto con su portada recortada en forma de estrella.
 Al elegir una, la estrellita gira y crece hasta convertirse en una galería, junto a una ficha
-con el nombre, lo que hice y la descripción. "Siguiente" pasa al próximo proyecto y "Volver"
-regresa a la constelación. Cada proyecto tiene su propia URL (`#work/loopies`).
+con el nombre, lo que hice, la descripción, pantallas ampliables y links al desarrollo completo
+y al prototipo. "Siguiente" pasa al próximo proyecto y "Volver" regresa a la constelación.
+Cada proyecto tiene su propia URL (`#work/loopies`).
 
-**Agregar imágenes:** copiá los archivos (`.jpg`, `.png`, `.webp`, `.avif`) en
-`src/assets/projects/<id-del-proyecto>/`. Se ordenan por nombre de archivo
-(por ejemplo `1-portada.jpg`, `2-app.png`); la primera es la portada. Astro las optimiza en el build.
-Las descripciones para lectores de pantalla van en `imageAlts` dentro de `src/data/projects.ts`.
+El **contenido** (textos, roles, links, orden) viene de Supabase; las **imágenes** viven en el repo:
 
-### `VisitorStars` — cielo de visitas
+- `src/assets/projects/<id>/` → galería de la estrella (la primera es la portada). Los SVG y los
+  archivos con "logo" en el nombre se muestran enteros; el resto se recorta para llenar la estrella.
+- `src/assets/projects/<id>/ficha/` → imágenes debajo de la descripción. Las capturas muy altas
+  se muestran recortadas y se recorren con scroll al ampliarlas.
 
-Libro de visitas en forma de cielo nocturno dentro de Contact. Al tocar el cielo se elige dónde
-va a brillar la estrella; al enviarla aparece con una animación y muestra su mensaje. Al pasar el
-cursor (o al hacer foco con el teclado) sobre cualquier estrella se ve el nombre, el mensaje y la fecha.
-Consume datos externos: ver [Fuente de datos externa](#fuente-de-datos-externa).
+Se ordenan por nombre de archivo (`1-logo.svg`, `2-app.png`) y Astro las optimiza en el build.
+Como las imágenes se generan en el build pero la lista de proyectos llega en el navegador, cada
+juego de imágenes se pre-renderiza dentro de un `<template>` y se clona cuando llega su proyecto.
+Un proyecto sin carpeta de imágenes muestra su inicial como portada.
+
+### `ServiceGrid` y `ContactLinks`
+
+Services muestra cuatro servicios en una grilla con íconos que se iluminan al pasar el cursor.
+Contact muestra botones a email, WhatsApp e Instagram sin exponer los datos en pantalla;
+el botón "Let's Talk" del header abre el mismo WhatsApp.
 
 ### `SiteHeader`
 
@@ -122,67 +133,88 @@ que se abre y cierra con un botón (accesible con teclado y `Escape`).
 
 ### Qué es
 
-**Cielo de visitas** (sección Contact → "Dejá tu estrella", URL `#contact/estrellas`): un libro de
-visitas donde cada visitante deja una estrella con su nombre y un mensaje corto, y todos ven la
-constelación compartida. Los datos viven en una base PostgreSQL de [Supabase](https://supabase.com)
-y el sitio la consume a través de su **API REST** (PostgREST) con `fetch`, sin SDK.
+Los **proyectos de Works** se guardan en una tabla de [Supabase](https://supabase.com) (PostgreSQL)
+que funciona como un CMS propio: se agregan, editan, ordenan u ocultan desde el panel de Supabase
+**sin tocar código ni hacer un nuevo deploy**. El sitio los consume a través de la **API REST** de
+Supabase (PostgREST) con `fetch`, sin SDK.
 
-- Cliente de la API: [`src/lib/visitorStars.ts`](src/lib/visitorStars.ts)
-- Interfaz y estados: [`src/components/VisitorStars.astro`](src/components/VisitorStars.astro)
-- Esquema y reglas de acceso: [`supabase/schema.sql`](supabase/schema.sql)
+- Cliente HTTP: [`src/lib/supabase.ts`](src/lib/supabase.ts)
+- Pedido, validación, caché y estados: [`src/lib/projectsStore.ts`](src/lib/projectsStore.ts)
+- Interfaz: [`ProjectConstellation.astro`](src/components/ProjectConstellation.astro) y
+  [`ProjectDetail.astro`](src/components/ProjectDetail.astro)
+- Tabla, reglas de acceso y contenido inicial: [`supabase/projects.sql`](supabase/projects.sql)
 
-### Qué datos se obtienen y se envían
+### Qué datos se obtienen
 
-| Operación | Pedido | Datos |
-| --- | --- | --- |
-| Leer el cielo | `GET /rest/v1/visitor_stars?select=id,name,message,x,y,created_at&order=created_at.desc&limit=150` | Las 150 estrellas más recientes: nombre, mensaje, posición (`x`, `y` en % del cielo) y fecha |
-| Dejar una estrella | `POST /rest/v1/visitor_stars?select=id,name,message,x,y,created_at` con `Prefer: return=representation` | `name`, `message`, `x`, `y`; la API devuelve la estrella creada (con `id` y fecha) |
+```
+GET /rest/v1/projects
+    ?select=id,name,roles,description,case_study_url,prototype_url,image_alts,card_image_alts
+    &order=sort_order.asc
+```
 
-Los dos pedidos piden las columnas de forma explícita (`select`): el rol anónimo no puede leer la
-columna de moderación `visible`, y sin `select` la API intentaría devolver todas las columnas y
-respondería **401**.
+| Campo | Uso en el sitio |
+| --- | --- |
+| `id` | URL del proyecto (`#work/<id>`) y carpeta de sus imágenes |
+| `name` | Nombre en la constelación y título de la ficha |
+| `roles` | Etiquetas de "qué hice" |
+| `description` | Texto de la ficha |
+| `case_study_url`, `prototype_url` | Botones "Ver desarrollo completo" y "Ver prototipo" (solo si existen) |
+| `image_alts`, `card_image_alts` | Descripciones de las imágenes para lectores de pantalla |
 
-Ambos pedidos llevan la clave pública (`apikey` / `Authorization: Bearer`).
+Las columnas se piden siempre de forma explícita: el rol anónimo no tiene permiso sobre las
+columnas internas (`published`, `updated_at`), y sin `select` la API intentaría devolver todas
+y respondería **401**.
+
+### Estrategia de carga: stale-while-revalidate
+
+1. Si el navegador tiene una copia de una visita anterior (`localStorage`), los proyectos se
+   muestran **al instante** desde ahí.
+2. En paralelo se piden los datos frescos a la API; si cambiaron, se actualiza la vista y la copia.
+3. Si la API falla pero hay copia, la visita sigue viendo los proyectos sin ningún error.
+
+Los proyectos se empiezan a pedir apenas carga la página, así que cuando se abre Works ya están listos.
+Si alguien entra por un link directo a un proyecto (`/#work/frameit`), la vista espera los datos
+antes de abrirlo; si el proyecto no existe o no está publicado, vuelve a la constelación.
 
 ### Seguridad
 
-- La clave `anon` es **pública por diseño**: lo que limita lo que puede hacer es
-  **Row Level Security** en la base. Cualquiera puede **leer** estrellas visibles y **crear** estrellas;
-  nadie puede editarlas ni borrarlas, y solo puede escribir las columnas `name`, `message`, `x` e `y`.
-- Las reglas de validación están **en la base de datos** (nombre de 1 a 30 caracteres, mensaje de 1 a 140,
-  posición entre 0 y 100), así que no se pueden saltear modificando el navegador. El formulario repite
-  esas reglas solo para dar feedback inmediato.
-- Lo que escriben las visitas se muestra siempre con `textContent`, nunca como HTML, para evitar XSS.
-- Moderación: desde el panel de Supabase se puede ocultar una estrella (`visible = false`) sin borrarla.
+- La clave `anon` es **pública por diseño**: lo que la limita es **Row Level Security**.
+  Solo puede **leer proyectos publicados** (`published = true`); no puede crear, editar ni borrar.
+- Todo el contenido que llega de la API se inserta con `textContent`, nunca como HTML (sin XSS),
+  y los links solo se usan si empiezan con `http(s)://` (descarta `javascript:` y similares).
+- Las filas mal formadas se descartan en lugar de romper la página.
 
 ### Límites y errores
 
 | Situación | Cómo se maneja |
 | --- | --- |
-| Variables de entorno faltantes | Estado "todavía no está conectado"; el envío queda deshabilitado |
-| Sin conexión / error de red | Mensaje específico + botón **Reintentar** |
-| Respuesta lenta | Timeout de 8 s (`AbortController`) → mensaje + Reintentar |
-| Error del servidor (5xx) | Un reintento automático; si vuelve a fallar, mensaje + Reintentar |
-| Límite de pedidos de Supabase (429) | "Hay muchas visitas a la vez, esperá un momento" |
-| Datos rechazados por la base (400) | "Tu estrella no pudo guardarse: revisá el nombre y el mensaje" |
-| Permisos / configuración (401/403) | Error del servidor: no es algo que la visita pueda corregir |
-| Respuesta con forma inesperada | Se descartan las filas inválidas en lugar de romper el cielo |
-| Spam desde el mismo navegador | Espera de 60 s entre estrellas (`localStorage`) |
-| Cantidad de estrellas | Se muestran las 150 más recientes para que el cielo siga siendo legible |
+| Variables de entorno faltantes | "Los proyectos todavía no están conectados" (sin reintento) |
+| Sin conexión / error de red | Copia guardada si existe; si no, mensaje + **Reintentar** |
+| Respuesta lenta | Timeout de 8 s (`AbortController`) |
+| Error del servidor (5xx) | Un reintento automático; si vuelve a fallar, copia guardada o mensaje + Reintentar |
+| Límite de pedidos de Supabase (429) | "Hay muchas visitas a la vez. Probá de nuevo en un momento." |
+| Permisos / configuración (401/403) | "No pudimos acceder a los proyectos." |
+| Respuesta con forma inesperada | Se descartan las filas inválidas |
+| Tabla vacía | "Pronto vas a ver mis proyectos acá." |
+| `localStorage` lleno o bloqueado | El sitio funciona igual, sin caché |
+| Datos que cambian con un proyecto abierto | Se aplican al cerrar la ficha, nunca bajo los ojos de la visita |
 
 ### Estados de la interfaz
 
-Carga ("Buscando estrellas…"), cielo con estrellas, vacío ("¡Dejá la primera!"), error con reintento,
-no configurado, posición elegida (estrella punteada), enviando, enviada (la estrella aparece con una
-animación y su mensaje) y errores de validación. Al volver a abrir el cielo, los datos se refrescan
-si pasaron más de 30 segundos.
+Carga (esqueleto de estrellas), constelación con proyectos, vacío, error con reintento,
+no configurado, proyecto seleccionado (ficha abierta) e imagen ampliada.
 
 ### Configurar Supabase
 
 1. Crear un proyecto en Supabase.
-2. En **SQL Editor**, ejecutar [`supabase/schema.sql`](supabase/schema.sql).
+2. En **SQL Editor**, ejecutar [`supabase/projects.sql`](supabase/projects.sql): crea la tabla,
+   las reglas de acceso y carga los proyectos actuales.
 3. Copiar **Project URL** y la clave **`anon` `public`** (Project Settings → API) en `.env`
    y en las variables de entorno del deploy (Vercel).
+
+**Agregar un proyecto:** crear la carpeta `src/assets/projects/<id>/` con sus imágenes (requiere
+deploy) y una fila en la tabla `projects` con el mismo `id`. **Editar textos o links:** solo desde
+Supabase, sin deploy.
 
 ## Deploy
 

@@ -3,8 +3,6 @@
  * `id` doubles as the URL hash (`#about`), so links anywhere on the page
  * (navbar, intro text, stars) open the matching section.
  */
-import { projects, type Project } from './projects';
-
 export type ServiceIcon = 'devices' | 'pen' | 'video' | 'code';
 
 export interface Service {
@@ -38,21 +36,15 @@ export interface Section {
   accent?: string;
   /** Body copy. Trusted static HTML (only <strong> is used). */
   body?: string;
-  /** When present, the section shows a project browser instead of body copy. */
-  projects?: Project[];
+  /**
+   * When true, the section shows the project constellation instead of body
+   * copy. Projects are loaded from Supabase at runtime (lib/projectsStore).
+   */
+  projects?: boolean;
   /** When present, the section shows a grid of services instead of body copy. */
   services?: Service[];
   /** Contact links shown under the body. */
   contacts?: ContactLink[];
-  /** When true, the section hosts the visitor guestbook at `#<id>/estrellas`. */
-  guestbook?: boolean;
-  /** Optional call-to-action button under the body. `href` may be an in-page route. */
-  cta?: {
-    label: string;
-    href: string;
-    /** Short line shown right above the button. Trusted static HTML (only <strong>). */
-    intro?: string;
-  };
 }
 
 export const sections: Section[] = [
@@ -68,7 +60,7 @@ export const sections: Section[] = [
     label: 'Works',
     title: 'Mis',
     accent: 'trabajos',
-    projects,
+    projects: true,
   },
   {
     id: 'services',
@@ -104,11 +96,5 @@ export const sections: Section[] = [
     title: 'Hablemos',
     body: '¿Tenés un proyecto en mente? Escribime.',
     contacts,
-    guestbook: true,
-    cta: {
-      label: 'Dejá tu estrella',
-      href: '#contact/estrellas',
-      intro: '¿Solo pasabas? Dejá tu estrella en el <strong>cielo de visitas</strong>.',
-    },
   },
 ];

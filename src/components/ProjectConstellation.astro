@@ -1,49 +1,168 @@
 ---
 /**
- * The "Works" overview: one small star per project, each showing the
- * project's cover cut out in a star shape. Each star links to
- * `#work/<project-id>`; SectionDialog turns that into the project view.
+ * The "Works" overview: one small star per project, each showing the project's
+ * cover cut out in a star shape and linking to `#<section>/<project-id>`.
+ *
+ * The list of projects comes from Supabase at runtime (lib/projectsStore). The
+ * cover images are optimised by Astro at build time, so every local cover is
+ * pre-rendered inside a <template> and cloned when its project arrives.
+ * States: loading (skeleton), ready, empty and error with retry.
  * Sizes use `cqw` of the surrounding big star.
  */
 import StarArt from './StarArt.astro';
-import type { Project } from '../data/projects';
-import { getProjectImages } from '../lib/projectImages';
+import { getLocalProjectIds, getProjectImages } from '../lib/projectImages';
 
 interface Props {
   sectionId: string;
-  projects: Project[];
 }
 
-const { sectionId, projects } = Astro.props;
+const { sectionId } = Astro.props;
+const SKELETON_COUNT = 5;
 ---
 
-<ul class="constellation" aria-label="Proyectos">
-  {
-    projects.map((project, index) => {
-      const [cover] = getProjectImages(project.id);
-      return (
-        <li class="constellation__item" style={`--i:${index}`}>
-          <a
-            class="constellation__link"
-            href={`#${sectionId}/${project.id}`}
-            data-project-mini={project.id}
-          >
-            <StarArt
-              class="constellation__art"
-              images={cover ? [cover] : []}
-              alts={[project.imageAlts?.[0] ?? '']}
-              name={project.name}
-              sizes="160px"
-            />
-            <span class="constellation__name">{project.name}</span>
-          </a>
+<div class="constellation-root" data-constellation-root data-section-id={sectionId}>
+  <ul class="constellation" aria-label="Proyectos" aria-busy="true" data-constellation>
+    {
+      Array.from({ length: SKELETON_COUNT }, () => (
+        <li class="constellation__item is-skeleton" aria-hidden="true">
+          <span class="constellation__skeleton-star" />
+          <span class="constellation__skeleton-name" />
         </li>
+      ))
+    }
+  </ul>
+
+  <div class="constellation__state" role="status" data-constellation-state hidden>
+    <p class="constellation__message" data-constellation-message></p>
+    <button class="constellation__retry" type="button" data-constellation-retry hidden>
+      Reintentar
+    </button>
+  </div>
+
+  <!-- Cloned once per project -->
+  <template data-mini-template>
+    <li class="constellation__item">
+      <a class="constellation__link" data-mini-link>
+        <span class="constellation__art-slot" data-art-slot></span>
+        <span class="constellation__name" data-mini-name></span>
+      </a>
+    </li>
+  </template>
+
+  <!-- Build-time optimised covers, keyed by project id -->
+  {
+    getLocalProjectIds().map((id) => {
+      const [cover] = getProjectImages(id);
+      return (
+        <template data-cover-for={id}>
+          <StarArt class="constellation__art" images={cover ? [cover] : []} name={id} sizes="160px" />
+        </template>
       );
     })
   }
-</ul>
+  <template data-cover-placeholder>
+    <StarArt class="constellation__art" images={[]} name="?" sizes="160px" />
+  </template>
+</div>
+
+<script>
+  import { loadProjects, onProjects, type Project } from '../lib/projectsStore';
+  import type { SupabaseErrorKind } from '../lib/supabase';
+
+  const MESSAGES: Record<SupabaseErrorKind, string> = {
+    'not-configured': 'Los proyectos todavía no están conectados.',
+    offline: 'No pudimos cargar los proyectos: parece que no hay conexión.',
+    timeout: 'Los proyectos tardaron demasiado en llegar.',
+    'rate-limit': 'Hay muchas visitas a la vez. Probá de nuevo en un momento.',
+    forbidden: 'No pudimos acceder a los proyectos.',
+    server: 'Algo falló al cargar los proyectos.',
+  };
+
+  const root = document.querySelector<HTMLElement>('[data-constellation-root]');
+
+  if (root) {
+    const sectionId = root.dataset.sectionId!;
+    const list = root.querySelector<HTMLElement>('[data-constellation]')!;
+    const stateBox = root.querySelector<HTMLElement>('[data-constellation-state]')!;
+    const message = root.querySelector<HTMLElement>('[data-constellation-message]')!;
+    const retry = root.querySelector<HTMLButtonElement>('[data-constellation-retry]')!;
+    const miniTemplate = root.querySelector<HTMLTemplateElement>('[data-mini-template]')!;
+    const placeholder = root.querySelector<HTMLTemplateElement>('[data-cover-placeholder]')!;
+
+    const coverFor = (project: Project) => {
+      const template = root.querySelector<HTMLTemplateElement>(`template[data-cover-for="${project.id}"]`);
+      const art = (template ?? placeholder).content.cloneNode(true) as DocumentFragment;
+      art.querySelectorAll('img[data-star-art-image]').forEach((img) => {
+        img.setAttribute('alt', project.imageAlts[0] ?? `${project.name} — portada`);
+      });
+      const initial = art.querySelector('.star-art__placeholder');
+      if (initial) initial.textContent = project.name.charAt(0);
+      return art;
+    };
+
+    const renderProjects = (projects: Project[]) => {
+      // Keep the "away" marker of a star that is currently open in the project view.
+      const away = list.querySelector<HTMLElement>('.is-away')?.dataset.projectMini;
+
+      const items = projects.map((project) => {
+        const item = miniTemplate.content.cloneNode(true) as DocumentFragment;
+        const link = item.querySelector<HTMLAnchorElement>('[data-mini-link]')!;
+        link.href = `#${sectionId}/${project.id}`;
+        link.dataset.projectMini = project.id;
+        link.classList.toggle('is-away', project.id === away);
+        item.querySelector('[data-mini-name]')!.textContent = project.name;
+        item.querySelector('[data-art-slot]')!.replaceWith(coverFor(project));
+        return item;
+      });
+
+      list.replaceChildren(...items);
+    };
+
+    const showMessage = (text: string, canRetry: boolean) => {
+      list.hidden = true;
+      stateBox.hidden = false;
+      message.textContent = text;
+      retry.hidden = !canRetry;
+    };
+
+    onProjects((state) => {
+      list.setAttribute('aria-busy', String(state.status === 'loading'));
+
+      if (state.status === 'loading') {
+        // Keep whatever is shown (skeleton or the previous list) while loading.
+        stateBox.hidden = true;
+        list.hidden = false;
+        return;
+      }
+
+      if (state.status === 'error') {
+        showMessage(MESSAGES[state.kind], state.kind !== 'not-configured');
+        return;
+      }
+
+      if (state.projects.length === 0) {
+        showMessage('Pronto vas a ver mis proyectos acá.', false);
+        return;
+      }
+
+      stateBox.hidden = true;
+      list.hidden = false;
+      renderProjects(state.projects);
+    });
+
+    retry.addEventListener('click', () => void loadProjects());
+
+    // Start loading right away so Works is ready by the time it's opened.
+    void loadProjects();
+  }
+</script>
 
 <style>
+  .constellation-root {
+    display: grid;
+    justify-items: center;
+  }
+
   .constellation {
     --mini-w: 10.5cqw;
     display: flex;
@@ -55,6 +174,10 @@ const { sectionId, projects } = Astro.props;
     margin: 0;
     padding: 0;
     list-style: none;
+  }
+
+  .constellation[hidden] {
+    display: none;
   }
 
   /* Second row sits slightly lower, like a loose constellation. */
@@ -107,17 +230,100 @@ const { sectionId, projects } = Astro.props;
     text-underline-offset: 0.25em;
   }
 
+  /* --- Loading skeleton --- */
+
+  .constellation__item.is-skeleton {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.8cqw;
+    width: var(--mini-w);
+  }
+
+  .constellation__skeleton-star {
+    width: 100%;
+    aspect-ratio: 265 / 242;
+    mask: url('/images/star-leopard.png') center / contain no-repeat;
+    background: rgb(74 37 0 / 0.14);
+    animation: constellation-pulse 1.4s ease-in-out infinite;
+  }
+
+  .constellation__skeleton-name {
+    width: 70%;
+    height: max(10px, 1.2cqw);
+    border-radius: var(--radius-pill);
+    background: rgb(74 37 0 / 0.1);
+    animation: constellation-pulse 1.4s ease-in-out infinite;
+  }
+
+  @keyframes constellation-pulse {
+    50% {
+      opacity: 0.45;
+    }
+  }
+
+  /* --- Empty / error --- */
+
+  .constellation__state {
+    display: grid;
+    justify-items: center;
+    gap: 1.4cqw;
+    max-width: 34cqw;
+    text-align: center;
+  }
+
+  .constellation__state[hidden] {
+    display: none;
+  }
+
+  .constellation__message {
+    margin: 0;
+    color: #1d1006;
+    font-family: var(--font-body);
+    font-size: max(14px, 1.7cqw);
+    line-height: 1.4;
+  }
+
+  .constellation__retry {
+    padding: 0.7em 1.6em;
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: var(--color-brown);
+    color: var(--color-cream);
+    font-family: var(--font-ui);
+    font-size: max(14px, 1.5cqw);
+    cursor: pointer;
+  }
+
+  .constellation__retry[hidden] {
+    display: none;
+  }
+
+  .constellation__retry:focus-visible {
+    outline: 2px solid var(--color-brown);
+    outline-offset: 3px;
+  }
+
   @media (max-width: 719px) {
     .constellation {
       --mini-w: 12.5cqw;
       gap: 2cqw 2.5cqw;
       max-width: calc(3 * var(--mini-w) + 2 * 2.5cqw + 1px);
     }
+
+    .constellation__state {
+      max-width: 46cqw;
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {
     .constellation__link :global(.constellation__art) {
       transition: none;
+    }
+
+    .constellation__skeleton-star,
+    .constellation__skeleton-name {
+      animation: none;
     }
   }
 </style>
