@@ -1,0 +1,97 @@
+<!doctype html>
+<!--
+  Social preview (Open Graph) image template, 1200 × 630.
+  Regenerate: open this file in Chrome at exactly 1200 × 630 and capture a
+  screenshot, saving it as public/og-image.jpg. Paths are relative to this file.
+-->
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<style>
+  @font-face { font-family: 'Dunbar Low'; src: url('../../public/fonts/DunbarLow-Regular.woff2') format('woff2'); }
+  @font-face { font-family: 'Tango Sans'; src: url('../../public/fonts/TangoSans.ttf') format('truetype'); }
+  @font-face { font-family: 'Tempting'; src: url('../../public/fonts/Tempting.otf') format('opentype'); }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    position: relative;
+    width: 1200px;
+    height: 630px;
+    overflow: hidden;
+    background:
+      radial-gradient(ellipse at 18% 30%, #fff5ea 0%, transparent 60%),
+      #fbebda;
+    color: #4a2500;
+  }
+
+  /* Hanging stars on the right, at different rope lengths. */
+  .star { position: absolute; top: 0; }
+  .star .rope {
+    position: absolute; left: 50%; bottom: 92%; width: 3px; translate: -50% 0;
+    background: repeating-linear-gradient(-50deg, #4a2500 0 3px, #7a4a1c 3px 6px);
+    border-radius: 2px;
+  }
+  .star img { display: block; width: 100%; filter: drop-shadow(0 10px 18px rgb(74 37 0 / 0.25)); }
+
+  .text { position: absolute; left: 84px; top: 150px; font-size: 76px; }
+  .line1 { display: flex; align-items: flex-start; gap: 0.15em; white-space: nowrap; }
+  .greeting { padding-top: 0.354em; font-family: Georgia, serif; line-height: normal; }
+  .greeting em { font-style: italic; }
+  .greeting .soy { font-family: 'Tango Sans', sans-serif; }
+
+  /* Fur letters: same layout as the site (em units, 96px design size). */
+  .name { position: relative; width: 5.1667em; height: 1.7604em; flex: none; }
+  .name img { position: absolute; top: 0; height: 100%; object-fit: fill; }
+
+  .role { margin-top: 0.1em; font-family: Georgia, serif; font-style: italic; font-size: 0.72em; }
+  .caption {
+    margin-top: 28px; font-family: 'Dunbar Low', sans-serif; font-size: 26px; letter-spacing: 0.01em;
+    display: flex; align-items: center; gap: 14px;
+  }
+  .caption .script { font-family: 'Tempting', cursive; }
+  .caption .dot { width: 6px; height: 6px; border-radius: 50%; background: #e87e01; }
+  .url {
+    position: absolute; left: 84px; bottom: 44px; padding: 10px 22px; border-radius: 100px;
+    background: rgb(74 37 0 / 0.85); color: #fbebda; font-family: 'Dunbar Low', sans-serif; font-size: 20px;
+  }
+</style>
+</head>
+<body>
+  <div class="star" style="left: 860px; width: 150px; margin-top: 300px">
+    <span class="rope" style="height: 300px"></span>
+    <img src="../images/star-leopard.png" alt="" />
+  </div>
+  <div class="star" style="left: 1020px; width: 120px; margin-top: 170px">
+    <span class="rope" style="height: 170px"></span>
+    <img src="../images/star-leopard.png" alt="" />
+  </div>
+  <div class="star" style="left: 960px; width: 90px; margin-top: 40px">
+    <span class="rope" style="height: 40px"></span>
+    <img src="../images/star-leopard.png" alt="" />
+  </div>
+
+  <div class="text">
+    <div class="line1">
+      <span class="greeting"><em>Hola!</em> <span class="soy">soy</span></span>
+      <span class="name">
+        <img src="../images/letter-b.png" style="left: 0em; width: 0.9896em" alt="" />
+        <img src="../images/letter-a-1.png" style="left: 0.9583em; width: 0.7604em" alt="" />
+        <img src="../images/letter-r-1.png" style="left: 1.7188em; width: 0.5833em" alt="" />
+        <img src="../images/letter-b-2.png" style="left: 2.3021em; width: 0.7917em" alt="" />
+        <img src="../images/letter-a-2.png" style="left: 3.0938em; width: 0.7604em" alt="" />
+        <img src="../images/letter-r-2.png" style="left: 3.8542em; width: 0.5833em" alt="" />
+        <img src="../images/letter-a-3.png" style="left: 4.4063em; width: 0.7604em" alt="" />
+      </span>
+    </div>
+    <div class="role">diseñadora multimedial</div>
+    <div class="caption">
+      <span>UX/UI</span><span class="dot"></span>
+      <span>Diseño gráfico</span><span class="dot"></span>
+      <span>Desarrollo front y back</span>
+    </div>
+  </div>
+
+  <div class="url"><span style="font-family: 'Tempting', cursive">B</span>arbara’s Creative portfolio</div>
+</body>
+</html>

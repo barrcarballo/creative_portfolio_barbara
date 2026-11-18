@@ -2,6 +2,8 @@
 import { defineConfig, envField } from 'astro/config';
 
 export default defineConfig({
+  // Public URL: used to build absolute links for social previews (Open Graph).
+  site: 'https://barbaracarballo.vercel.app',
   env: {
     // Explicit allow-list of variables exposed to the browser. Only these two
     // ever reach client code, regardless of what else is defined in the env.

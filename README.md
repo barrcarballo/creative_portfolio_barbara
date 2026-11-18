@@ -25,6 +25,13 @@ justo para cómo se muestran (por ejemplo, las letras ya estiradas al doble de s
 la home pasó de ~3,9 MB a ~0,4 MB de imágenes. Hay que correrlo solo si se reemplaza un original.
 Las imágenes de los proyectos no pasan por acá: Astro las optimiza en el build.
 
+### Vista previa para redes
+
+`public/og-image.jpg` (1200 × 630) es la imagen que aparece al compartir el link en WhatsApp,
+LinkedIn, X, etc. Se genera desde `assets-src/og/og-template.html`: abrirla en Chrome a 1200 × 630
+y guardar una captura. Las etiquetas Open Graph / Twitter están en `src/layouts/BaseLayout.astro`
+y usan `site` de `astro.config.mjs` para armar URLs absolutas.
+
 ### Variables de entorno
 
 Los proyectos de Works se cargan desde Supabase (ver [Fuente de datos externa](#fuente-de-datos-externa)).
@@ -134,7 +141,7 @@ Un proyecto sin carpeta de imágenes muestra su inicial como portada.
 
 Services muestra cuatro servicios en una grilla con íconos que se iluminan al pasar el cursor.
 Contact muestra botones a email, WhatsApp e Instagram sin exponer los datos en pantalla;
-el botón "Let's Talk" del header abre el mismo WhatsApp.
+el botón "Hablemos" del header abre el mismo WhatsApp.
 
 ### `SiteHeader`
 

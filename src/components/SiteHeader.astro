@@ -11,12 +11,12 @@ interface NavLink {
 }
 
 const links: NavLink[] = [
-  { label: 'about', href: '#about' },
-  { label: 'work', href: '#work' },
-  { label: 'services', href: '#services' },
+  { label: 'sobre mí', href: '#about' },
+  { label: 'trabajos', href: '#work' },
+  { label: 'servicios', href: '#services' },
 ];
 
-// "Let's Talk" opens a WhatsApp chat; falls back to the Contact section.
+// "Hablemos" opens a WhatsApp chat; falls back to the Contact section.
 const talkHref = contacts.find((contact) => contact.type === 'whatsapp')?.href ?? '#contact';
 const talkIsExternal = talkHref.startsWith('http');
 ---
@@ -34,10 +34,10 @@ const talkIsExternal = talkHref.startsWith('http');
       aria-controls="site-nav"
       data-nav-toggle
     >
-      <span class="site-header__toggle-label" data-nav-toggle-label>menu</span>
+      <span class="site-header__toggle-label" data-nav-toggle-label>menú</span>
     </button>
 
-    <nav class="site-header__nav" id="site-nav" aria-label="Main" data-nav>
+    <nav class="site-header__nav" id="site-nav" aria-label="Principal" data-nav>
       <ul class="site-header__links">
         {
           links.map((link) => (
@@ -55,7 +55,7 @@ const talkIsExternal = talkHref.startsWith('http');
         target={talkIsExternal ? '_blank' : undefined}
         rel={talkIsExternal ? 'noopener noreferrer' : undefined}
       >
-        <span><span class="script-initial">L</span>et’s Talk</span>
+        <span><span class="script-initial">H</span>ablemos</span>
         <img src="/images/arrow-up-right.svg" width="21" height="21" alt="" />
         {talkIsExternal && <span class="visually-hidden">(WhatsApp, se abre en una pestaña nueva)</span>}
       </a>
@@ -73,7 +73,7 @@ const talkIsExternal = talkHref.startsWith('http');
     const setOpen = (open: boolean) => {
       toggle.setAttribute('aria-expanded', String(open));
       header.classList.toggle('is-open', open);
-      label.textContent = open ? 'close' : 'menu';
+      label.textContent = open ? 'cerrar' : 'menú';
     };
 
     toggle.addEventListener('click', () => {
@@ -228,6 +228,10 @@ const talkIsExternal = talkHref.startsWith('http');
 
     .site-header__bar {
       padding: 10px 10px 10px 22px;
+      /* The collapsed menu panel is a second (empty) flex row: a row gap would
+         add invisible space below and push the brand and toggle off-centre.
+         The open panel brings its own top padding instead. */
+      row-gap: 0;
     }
 
     /* Full pill while closed; softer corners once the panel makes it tall. */

@@ -18,7 +18,7 @@ export interface ContactLink {
   href: string;
 }
 
-/** Contact channels: used by the Contact section and the header's "Let's Talk". */
+/** Contact channels: used by the Contact section and the header's "Hablemos" button. */
 export const contacts: ContactLink[] = [
   { type: 'email', label: 'Email', href: 'mailto:barbbportfolio@gmail.com' },
   // wa.me needs the international format: 54 (AR) + 9 (mobile) + area code + number.
@@ -50,21 +50,21 @@ export interface Section {
 export const sections: Section[] = [
   {
     id: 'about',
-    label: 'About me',
+    label: 'Sobre mí',
     title: 'Simple, nunca',
     accent: 'básica',
     body: 'Soy <strong>diseñadora multimedia</strong> y me especializo en UX/UI. Creo que las mejores interfaces son las que no te hacen pensar, y las mejores marcas, las que no te podés sacar de la cabeza.',
   },
   {
     id: 'work',
-    label: 'Works',
+    label: 'Trabajos',
     title: 'Mis',
     accent: 'trabajos',
     projects: true,
   },
   {
     id: 'services',
-    label: 'Services',
+    label: 'Servicios',
     title: 'Lo que',
     accent: 'hago',
     services: [
@@ -92,7 +92,7 @@ export const sections: Section[] = [
   },
   {
     id: 'contact',
-    label: 'Contact',
+    label: 'Contacto',
     title: 'Hablemos',
     body: '¿Tenés un proyecto en mente? Escribime.',
     contacts,
