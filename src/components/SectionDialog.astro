@@ -22,6 +22,7 @@ import ProjectConstellation from './ProjectConstellation.astro';
 import ProjectDetail from './ProjectDetail.astro';
 import VisitorStars from './VisitorStars.astro';
 import ServiceGrid from './ServiceGrid.astro';
+import ContactLinks from './ContactLinks.astro';
 
 interface Props {
   sections: Section[];
@@ -85,6 +86,10 @@ const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
                 <ServiceGrid services={section.services} />
               ) : (
                 <p class="section-star__text" set:html={section.body} />
+              )}
+              {section.contacts && <ContactLinks links={section.contacts} />}
+              {section.cta?.intro && (
+                <p class="section-star__cta-intro" set:html={section.cta.intro} />
               )}
               {section.cta && (
                 <a class="section-star__cta" href={section.cta.href} data-section-cta>
@@ -764,7 +769,8 @@ const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
 
   /* Sections with a project browser need the vertical space. */
   .section-star__article:has([data-project-mini]),
-  .section-star__article:has([data-services]) {
+  .section-star__article:has([data-services]),
+  .section-star__article:has([data-contact-links]) {
     gap: 2.6cqw;
   }
 
@@ -800,6 +806,19 @@ const splitInitial = (text: string) => [text.charAt(0), text.slice(1)];
     transition: translate 0.2s ease;
   }
 
+  /* Line introducing the CTA: separated from what's above, hugging the button below. */
+  .section-star__cta-intro {
+    margin: 1.4cqw 0 -1cqw;
+    color: #000;
+    font-family: var(--font-body);
+    font-size: max(13px, 1.6cqw);
+    line-height: 1.35;
+  }
+
+  /* The intro already pulls the button close; drop the button's own negative offset. */
+  .section-star__cta-intro + .section-star__cta {
+    margin-top: 0;
+  }
   .section-star__cta:hover {
     translate: 0 -2px;
   }

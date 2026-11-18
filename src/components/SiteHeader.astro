@@ -3,6 +3,8 @@
  * Site-wide navigation. Desktop shows inline links; below 768px the links
  * collapse into a toggleable panel so the pill stays legible on small screens.
  */
+import { contacts } from '../data/sections';
+
 interface NavLink {
   label: string;
   href: string;
@@ -13,6 +15,10 @@ const links: NavLink[] = [
   { label: 'work', href: '#work' },
   { label: 'services', href: '#services' },
 ];
+
+// "Let's Talk" opens a WhatsApp chat; falls back to the Contact section.
+const talkHref = contacts.find((contact) => contact.type === 'whatsapp')?.href ?? '#contact';
+const talkIsExternal = talkHref.startsWith('http');
 ---
 
 <header class="site-header" data-site-header>
@@ -43,9 +49,15 @@ const links: NavLink[] = [
           ))
         }
       </ul>
-      <a class="site-header__cta" href="#contact">
+      <a
+        class="site-header__cta"
+        href={talkHref}
+        target={talkIsExternal ? '_blank' : undefined}
+        rel={talkIsExternal ? 'noopener noreferrer' : undefined}
+      >
         <span><span class="script-initial">L</span>et’s Talk</span>
         <img src="/images/arrow-up-right.svg" width="21" height="21" alt="" />
+        {talkIsExternal && <span class="visually-hidden">(WhatsApp, se abre en una pestaña nueva)</span>}
       </a>
     </nav>
   </div>

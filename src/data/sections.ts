@@ -13,6 +13,21 @@ export interface Service {
   icon: ServiceIcon;
 }
 
+export interface ContactLink {
+  type: 'email' | 'whatsapp' | 'instagram';
+  /** Button text: the channel's name, not the address/number itself. */
+  label: string;
+  href: string;
+}
+
+/** Contact channels: used by the Contact section and the header's "Let's Talk". */
+export const contacts: ContactLink[] = [
+  { type: 'email', label: 'Email', href: 'mailto:barbbportfolio@gmail.com' },
+  // wa.me needs the international format: 54 (AR) + 9 (mobile) + area code + number.
+  { type: 'whatsapp', label: 'WhatsApp', href: 'https://wa.me/5491123101994' },
+  { type: 'instagram', label: 'Instagram', href: 'https://www.instagram.com/barrcarballo/' },
+];
+
 export interface Section {
   id: string;
   /** Label shown on the hanging star. */
@@ -27,10 +42,17 @@ export interface Section {
   projects?: Project[];
   /** When present, the section shows a grid of services instead of body copy. */
   services?: Service[];
+  /** Contact links shown under the body. */
+  contacts?: ContactLink[];
   /** When true, the section hosts the visitor guestbook at `#<id>/estrellas`. */
   guestbook?: boolean;
   /** Optional call-to-action button under the body. `href` may be an in-page route. */
-  cta?: { label: string; href: string };
+  cta?: {
+    label: string;
+    href: string;
+    /** Short line shown right above the button. Trusted static HTML (only <strong>). */
+    intro?: string;
+  };
 }
 
 export const sections: Section[] = [
@@ -80,9 +102,13 @@ export const sections: Section[] = [
     id: 'contact',
     label: 'Contact',
     title: 'Hablemos',
-    // TODO: add contact details (email, socials).
-    body: '¿Pasaste por acá? Dejá tu estrella en el <strong>cielo de visitas</strong>: un nombre, un mensaje y un lugar donde brillar.',
+    body: '¿Tenés un proyecto en mente? Escribime.',
+    contacts,
     guestbook: true,
-    cta: { label: 'Dejá tu estrella', href: '#contact/estrellas' },
+    cta: {
+      label: 'Dejá tu estrella',
+      href: '#contact/estrellas',
+      intro: '¿Solo pasabas? Dejá tu estrella en el <strong>cielo de visitas</strong>.',
+    },
   },
 ];
